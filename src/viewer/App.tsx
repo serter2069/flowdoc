@@ -1,26 +1,32 @@
 import { useMemo, useState } from "react";
-import type { FlowDoc, Journey } from "../schema";
-import { JourneyGraph } from "./components/JourneyGraph";
-import { JourneySidebar } from "./components/JourneySidebar";
-import { JourneyDetail } from "./components/JourneyDetail";
+import type { FlowDoc, Screen } from "../schema";
+import { collectEdges } from "../schema";
+import { SitemapGraph } from "./components/SitemapGraph";
+import { SitemapSidebar } from "./components/SitemapSidebar";
+import { SitemapDetail } from "./components/SitemapDetail";
 
 export function App({ data }: { data: FlowDoc }) {
-  const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
-  const [activeJourneyId, setActiveJourneyId] = useState<string | null>(
-    data.journeys[0]?.id ?? null
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState<string | null>(null);
 
-  const filteredJourneys = useMemo<Journey[]>(() => {
-    if (!activeRoleId) return data.journeys;
-    return data.journeys.filter((j) => {
-      if (j.primaryActor === activeRoleId) return true;
-      return j.steps.some((s) => s.actor === activeRoleId);
+  const filteredScreens = useMemo<Screen[]>(() => {
+    return data.screens.filter((s) => {
+      if (kindFilter && s.kind !== kindFilter) return false;
+      if (roleFilter) {
+        if (!s.roles?.includes(roleFilter) && !s.roles?.includes("all")) {
+          return false;
+        }
+      }
+      return true;
     });
-  }, [data.journeys, activeRoleId]);
+  }, [data.screens, roleFilter, kindFilter]);
 
-  const activeJourney = useMemo<Journey | null>(
-    () => data.journeys.find((j) => j.id === activeJourneyId) ?? null,
-    [activeJourneyId, data.journeys]
+  const edges = useMemo(() => collectEdges(data), [data]);
+
+  const filteredIds = useMemo(
+    () => new Set(filteredScreens.map((s) => s.id)),
+    [filteredScreens]
   );
 
   return (
@@ -31,51 +37,44 @@ export function App({ data }: { data: FlowDoc }) {
           {data.subtitle ? <span className="sub">{data.subtitle}</span> : null}
         </div>
         <span className="badge">
-          {data.roles.length} roles · {data.screens.length} screens ·{" "}
-          {data.journeys.length} journeys
+          {data.screens.length} screens · {edges.length} nav edges
+          {data.roles?.length ? ` · ${data.roles.length} roles` : ""}
         </span>
       </header>
 
-      <JourneySidebar
-        roles={data.roles}
-        journeys={filteredJourneys}
-        totalJourneys={data.journeys.length}
-        activeRoleId={activeRoleId}
-        activeJourneyId={activeJourneyId}
-        onRoleSelect={(id) => {
-          setActiveRoleId(id);
-          // if the active journey doesn't include this role, pick the first one that does
-          if (id && activeJourney && activeJourney.primaryActor !== id) {
-            const first = data.journeys.find(
-              (j) => j.primaryActor === id || j.steps.some((s) => s.actor === id)
-            );
-            if (first) setActiveJourneyId(first.id);
-          }
-        }}
-        onJourneySelect={setActiveJourneyId}
+      <SitemapSidebar
+        roles={data.roles ?? []}
+        groups={data.groups ?? []}
+        screens={data.screens}
+        filteredScreens={filteredScreens}
+        selectedId={selectedId}
+        roleFilter={roleFilter}
+        kindFilter={kindFilter}
+        onSelectScreen={setSelectedId}
+        onRoleFilter={(id) => setRoleFilter(id === roleFilter ? null : id)}
+        onKindFilter={(k) => setKindFilter(k === kindFilter ? null : k)}
       />
 
       <main className="canvas">
-        <JourneyGraph
+        <SitemapGraph
           screens={data.screens}
-          roles={data.roles}
-          activeJourney={activeJourney}
+          edges={edges}
+          groups={data.groups ?? []}
+          roles={data.roles ?? []}
+          visibleScreenIds={filteredIds}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
         />
-        {activeJourney ? (
-          <div className="flow-counter">
-            {activeJourney.steps.length} step
-            {activeJourney.steps.length === 1 ? "" : "s"} ·{" "}
-            {new Set(activeJourney.steps.map((s) => s.actor)).size} actor
-            {new Set(activeJourney.steps.map((s) => s.actor)).size === 1 ? "" : "s"}
-          </div>
-        ) : null}
       </main>
 
       <aside className="detail">
-        <JourneyDetail
-          journey={activeJourney}
-          roles={data.roles}
-          screens={data.screens}
+        <SitemapDetail
+          screen={data.screens.find((s) => s.id === selectedId) ?? null}
+          allScreens={data.screens}
+          roles={data.roles ?? []}
+          groups={data.groups ?? []}
+          edges={edges}
+          onJumpTo={setSelectedId}
         />
       </aside>
     </div>

@@ -1,16 +1,16 @@
 # flowdoc
 
-> Document your app's **user journeys** as a clickable, role-filtered diagram — driven entirely by a JSON file. Works in any repo, optimized for React Native / Expo monorepos.
+> A **sitemap of your entire app** — every screen, modal, auth page, and the navigation between them — on a single zoomable canvas. Driven entirely by a JSON file. Works in any repo, optimized for React Native / Expo monorepos.
 
-Pick a role (Manager / Worker / Customer…) and a journey ("Invite + onboard a teammate", "Accept a job → mark complete", "Submit a review")  and `flowdoc` highlights the screen-to-screen path your user actually takes, annotating every tap, form, and the backend call sitting behind it. The output is a single self-contained HTML file — no server, no CDN, drop it anywhere.
+Open `flowdoc.html`: every screen of your app on one canvas. Click any node and the side panel shows its components, the path on disk, which roles can reach it, where you came from, and where you can go next. Filter by role or by kind (Tab / Screen / Modal / Auth / Public). Search by name, file, or component. The output is a single self-contained HTML file — no server, no CDN, drop it anywhere.
 
-![Pluto demo — role chips, role-colored journey list, screen-node canvas with action-labeled edges, step-by-step detail panel](docs/preview.png)
+![Pluto demo — role + kind filters, screens grouped by area, big graph with all 52 screens and 99 nav edges, side panel with component list + outgoing/incoming nav](docs/preview.png)
 
 **Live demo:** https://serter2069.github.io/flowdoc/examples/pluto/flowdoc.html
 
 ## Why
 
-"How does *this thing* actually work for a Manager? for a Worker? for the Customer?" is the question that takes new contributors days to answer. They squint at a flat list of routes or controllers and never see the human path through the product. `flowdoc` lets you write that path down once, in JSON, and renders it as a click-by-click diagram with role swimlanes, screens-as-nodes, and the backend-calls-that-matter pinned to the steps that trigger them.
+"What's the whole shape of this app?" is the question that takes new contributors days to answer. They squint at the file tree, click around the running app, and slowly assemble a mental map. `flowdoc` flips it: see every screen at once, scoped to the role you care about, with the file path on each node so you can jump straight to the code.
 
 ## Install
 
@@ -37,14 +37,9 @@ That's it. Open `flowdoc.html` in any browser — no server required.
 
 ## Example: Pluto
 
-[`examples/pluto/flows.json`](examples/pluto/flows.json) documents 4 cross-role journeys on a multi-tenant booking platform (Expo app + Laravel API):
+[`examples/pluto/flows.json`](examples/pluto/flows.json) is the full sitemap of a multi-tenant booking platform (Expo app + Laravel API): 52 screens, 99 nav edges, 5 roles, 12 groups (Daily ops, Bookings, Customers + messaging, Catalog + offers, Earnings + payments, Insights + audit, Email templates, Team, Platform admin, Account, Auth, Public web).
 
-| Journey | What it traces |
-| --- | --- |
-| **Manager: invite + onboard a worker** | Pulse → Settings → Team → +Add user → temp_password toast → manager passes pwd out-of-band → worker signs in → My Jobs |
-| **Dispatcher: create + dispatch a booking** | Dispatch → New booking (multi-step) → back to Dispatch → tap booking → Dispatch button (this is what sends the customer email) |
-| **Worker: accept dispatched job → mark complete** | My Jobs (Dispatched tab) → Booking detail → status walks 'On the way' / 'On site' → Complete Booking → photo upload → Submit |
-| **Customer: receive review email → submit NPS** | Worker submits → observer queues `SendReviewRequestJob` → customer email → tokenized `/reviews/{token}` web page → POST review |
+Filter the sidebar to "Worker" and you see just the Worker-facing surface (My Jobs, Booking detail, Complete booking, Earnings, etc.). Filter to "Modal" and you see only the inline forms. Click any screen — the right panel shows what's on it and which other screens it links to.
 
 ```bash
 git clone https://github.com/serter2069/flowdoc.git
@@ -55,64 +50,70 @@ open pluto.html
 
 ## The JSON
 
-Three top-level arrays: `roles`, `screens`, and `journeys` (each journey is a list of `steps` taken by an actor moving between screens).
+Three primary arrays: `roles`, `groups`, and `screens` (each screen carries its own `navTo` outgoing links — there's no separate edges array, though you can supply one if you want labeled edges).
 
 ```json
 {
   "title": "My App",
-  "subtitle": "User journeys",
+  "subtitle": "Sitemap",
   "roles": [
-    { "id": "manager", "name": "Manager", "icon": "🧑‍💼", "color": "#7aa2ff" },
-    { "id": "worker",  "name": "Worker",  "icon": "🛠️",  "color": "#22c55e" }
+    { "id": "admin", "name": "Admin", "icon": "👑", "color": "#7aa2ff" },
+    { "id": "member", "name": "Member", "icon": "👤", "color": "#22c55e" }
+  ],
+  "groups": [
+    { "id": "workspace", "name": "Workspace", "color": "#7aa2ff" },
+    { "id": "auth", "name": "Auth", "color": "#ef4444" }
   ],
   "screens": [
-    { "id": "home",    "name": "Home",     "kind": "tab",    "path": "/(tabs)/home" },
-    { "id": "team",    "name": "Team",     "kind": "screen", "path": "/settings/team" },
-    { "id": "team-form","name": "Add user","kind": "modal" },
-    { "id": "out-of-band", "name": "Out-of-band", "kind": "out-of-band" }
-  ],
-  "journeys": [
     {
-      "id": "invite-user",
-      "name": "Manager: invite + onboard a teammate",
-      "primaryActor": "manager",
-      "description": "Manager creates the account; temp password goes out-of-band; new user signs in.",
-      "tags": ["onboarding"],
-      "steps": [
-        { "actor": "manager", "on": "home", "to": "team", "action": "Tap Settings → Team", "kind": "tap" },
-        { "actor": "manager", "on": "team", "to": "team-form",
-          "action": "Tap '+ Add user'", "kind": "tap" },
-        { "actor": "manager", "on": "team-form", "to": "team",
-          "action": "Fill form, tap Save", "kind": "submit",
-          "server": { "label": "POST /api/v1/users",
-                      "returns": "{ meta: { temp_password: string } }" },
-          "note": "Toast: 'Temp password: ABCD-1234'." },
-        { "actor": "manager", "on": "team", "to": "out-of-band",
-          "action": "Share the temp password (SMS / Slack / etc.)", "kind": "manual" }
-      ]
+      "id": "home", "name": "Home", "kind": "tab", "group": "workspace",
+      "path": "/(tabs)/home", "roles": ["admin", "member"],
+      "components": ["Header", "FeedList", "FAB"],
+      "navTo": ["item-detail", "item-new"]
+    },
+    {
+      "id": "item-detail", "name": "Item detail", "kind": "screen",
+      "group": "workspace", "path": "/items/:id",
+      "roles": ["admin", "member"],
+      "components": ["Header", "ItemFields", "ActionButtons"]
+    },
+    {
+      "id": "item-new", "name": "New item", "kind": "modal",
+      "group": "workspace", "components": ["Form", "SubmitButton"]
+    },
+    {
+      "id": "login", "name": "Sign in", "kind": "auth", "group": "auth",
+      "path": "/login", "navTo": ["home"]
     }
   ]
 }
 ```
 
 ### Role fields
-`id`, `name`, `icon?`, `color?` (hex; used to tint nodes/edges/chips), `description?`.
+`id`, `name`, `icon?`, `color?`, `description?`.
 
-### Screen kinds
-`screen` · `modal` · `tab` · `drawer` · `external` · `email` · `web` · `out-of-band`.
-Pure labels; pick whichever fits.
+### Group fields
+`id`, `name`, `color?`, `description?`. Groups are how the sidebar organizes the screen list.
 
-### Step kinds
-`tap` · `swipe` · `fill` · `submit` · `open` · `receive` · `view` · `manual` · `wait` · `decision`. Optional. Rendered as a chip on the step.
+### Screen fields
+- `id` — kebab-case
+- `name` — what users see
+- `kind` — one of `tab` · `drawer` · `screen` · `modal` · `auth` · `public` · `nested` · `external`
+- `group?` — references `groups[].id`
+- `path?` — file path or route (rendered under the node + in the detail panel)
+- `description?`
+- `roles?` — string[] of role ids who can reach this screen (drives the role filter)
+- `components?` — string[] of key components on the screen
+- `navTo?` — string[] of screen ids you can navigate to from here
 
-### Step shape
-- `actor`: which role is performing the action
-- `on`: screen they're on
-- `to`: screen they end up on (omit if they stay on `on`)
-- `action`: human description ("Tap the + button", "Fill name + email")
-- `server`: `{label, returns?, note?}` — pinned to the step when a backend call is what makes the next screen appear
+### Optional `edges` array
+If you want labeled edges (`"Tap +Add user"`) or edges of a particular `kind` (`modal` / `back` / `deeplink`), provide them explicitly:
 
-Actor changes between steps render as a "handoff" marker — useful for multi-role journeys (manager creates account → worker logs in).
+```json
+"edges": [
+  { "from": "team", "to": "team-form", "kind": "modal", "label": "Tap +" }
+]
+```
 
 ## Output
 

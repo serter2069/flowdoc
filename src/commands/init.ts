@@ -3,82 +3,107 @@ import { resolve } from "node:path";
 
 const TEMPLATE = {
   title: "My App",
-  subtitle: "User journeys",
+  subtitle: "Sitemap — every screen and how it links",
   roles: [
-    { id: "manager", name: "Manager", icon: "🧑‍💼", color: "#7aa2ff" },
-    { id: "worker", name: "Worker", icon: "🛠️", color: "#22c55e" },
-    { id: "customer", name: "Customer", icon: "👤", color: "#f59e0b" },
+    { id: "admin", name: "Admin", icon: "👑", color: "#7aa2ff" },
+    { id: "member", name: "Member", icon: "👤", color: "#22c55e" },
+  ],
+  groups: [
+    { id: "workspace", name: "Workspace", color: "#7aa2ff" },
+    { id: "account", name: "Account", color: "#a855f7" },
+    { id: "auth", name: "Auth", color: "#ef4444" },
   ],
   screens: [
-    { id: "home", name: "Home", kind: "tab", path: "/(tabs)/home" },
-    { id: "settings", name: "Settings", kind: "screen", path: "/settings" },
-    { id: "team", name: "Team", kind: "screen", path: "/settings/team" },
-    { id: "team-form", name: "Add user", kind: "modal" },
-    { id: "login", name: "Login", kind: "screen", path: "/login" },
-    { id: "out-of-band", name: "Out-of-band", kind: "out-of-band" },
-  ],
-  journeys: [
     {
-      id: "manager-invite",
-      name: "Manager: invite + onboard a teammate",
-      primaryActor: "manager",
-      description:
-        "Manager creates the account. API returns a temp password — manager shares it out-of-band. New user signs in and lands on Home.",
-      tags: ["onboarding"],
-      steps: [
-        {
-          actor: "manager",
-          on: "home",
-          to: "settings",
-          action: "Tap the Settings tab",
-          kind: "tap",
-        },
-        {
-          actor: "manager",
-          on: "settings",
-          to: "team",
-          action: "Tap 'Team'",
-          kind: "tap",
-        },
-        {
-          actor: "manager",
-          on: "team",
-          to: "team-form",
-          action: "Tap the + button",
-          kind: "tap",
-        },
-        {
-          actor: "manager",
-          on: "team-form",
-          to: "team",
-          action: "Fill name + email + role, tap Save",
-          kind: "submit",
-          server: {
-            label: "POST /api/v1/users",
-            returns: "{ data: User, meta: { temp_password: string } }",
-          },
-          note: "Toast appears: 'Temp password: ABCD-1234'. Manager copies it.",
-        },
-        {
-          actor: "manager",
-          on: "team",
-          to: "out-of-band",
-          action: "Share the temp password with the new user (SMS / Slack / etc.)",
-          kind: "manual",
-          note: "No automated invitation email exists — this hand-off is the bottleneck.",
-        },
-        {
-          actor: "worker",
-          on: "login",
-          to: "home",
-          action: "Open the app, enter email + temp password, tap Sign in",
-          kind: "submit",
-          server: { label: "POST /api/v1/auth/login", returns: "{ token, user }" },
-          note: "Landing screen depends on role — Worker → My Jobs, Manager → Pulse.",
-        },
-      ],
+      id: "home",
+      name: "Home",
+      kind: "tab",
+      group: "workspace",
+      path: "/(tabs)/home",
+      roles: ["admin", "member"],
+      components: ["Header", "FeedList", "FAB"],
+      navTo: ["item-detail", "item-new"]
     },
-  ],
+    {
+      id: "item-detail",
+      name: "Item detail",
+      kind: "screen",
+      group: "workspace",
+      path: "/items/:id",
+      roles: ["admin", "member"],
+      components: ["Header", "ItemFields", "ActionButtons"],
+      navTo: ["item-edit"]
+    },
+    {
+      id: "item-new",
+      name: "New item",
+      kind: "modal",
+      group: "workspace",
+      roles: ["admin", "member"],
+      components: ["Form", "SubmitButton"]
+    },
+    {
+      id: "item-edit",
+      name: "Edit item",
+      kind: "screen",
+      group: "workspace",
+      path: "/items/:id/edit",
+      roles: ["admin", "member"],
+      components: ["Form", "SubmitButton", "DeleteButton"]
+    },
+    {
+      id: "settings",
+      name: "Settings",
+      kind: "tab",
+      group: "account",
+      path: "/(tabs)/settings",
+      roles: ["admin", "member"],
+      components: ["SettingsMenu"],
+      navTo: ["profile", "team"]
+    },
+    {
+      id: "profile",
+      name: "Profile",
+      kind: "screen",
+      group: "account",
+      path: "/settings/profile",
+      roles: ["admin", "member"]
+    },
+    {
+      id: "team",
+      name: "Team",
+      kind: "screen",
+      group: "account",
+      path: "/settings/team",
+      roles: ["admin"],
+      components: ["UserList", "AddUserFAB"],
+      navTo: ["team-form"]
+    },
+    {
+      id: "team-form",
+      name: "Add user",
+      kind: "modal",
+      group: "account",
+      roles: ["admin"],
+      components: ["Form", "RoleDropdown"]
+    },
+    {
+      id: "login",
+      name: "Sign in",
+      kind: "auth",
+      group: "auth",
+      path: "/login",
+      navTo: ["home", "forgot-password"]
+    },
+    {
+      id: "forgot-password",
+      name: "Forgot password",
+      kind: "auth",
+      group: "auth",
+      path: "/forgot-password",
+      navTo: ["login"]
+    }
+  ]
 };
 
 export function initCommand(opts: { out: string; force: boolean }) {

@@ -1,402 +1,534 @@
 {
   "title": "Pluto / StreamlinePro",
-  "subtitle": "User journeys — what happens when you tap, by role",
+  "subtitle": "Sitemap — every screen, modal, auth page, and how they link",
   "roles": [
-    {
-      "id": "manager",
-      "name": "Manager",
-      "icon": "🧑‍💼",
-      "color": "#7aa2ff",
-      "description": "Company-scope admin. Sees Pulse landing, can invite users, edit company settings."
-    },
-    {
-      "id": "dispatcher",
-      "name": "Dispatcher",
-      "icon": "📋",
-      "color": "#22c55e",
-      "description": "Schedules and assigns work. Lives in DispatchScreen and creates bookings."
-    },
-    {
-      "id": "worker",
-      "name": "Worker",
-      "icon": "🛠️",
-      "color": "#f59e0b",
-      "description": "Field installer. Lives in MyAppointments; runs jobs from BookingDetail."
-    },
-    {
-      "id": "customer",
-      "name": "Customer",
-      "icon": "👤",
-      "color": "#e879f9",
-      "description": "End-customer of a booked service. Touches the app only via emailed token links."
-    }
+    { "id": "manager", "name": "Manager", "icon": "🧑‍💼", "color": "#7aa2ff" },
+    { "id": "dispatcher", "name": "Dispatcher", "icon": "📋", "color": "#22c55e" },
+    { "id": "worker", "name": "Worker", "icon": "🛠️", "color": "#f59e0b" },
+    { "id": "admin", "name": "Platform admin", "icon": "👑", "color": "#a855f7" },
+    { "id": "public", "name": "Public / customer", "icon": "👤", "color": "#e879f9" }
+  ],
+  "groups": [
+    { "id": "operations", "name": "Daily ops", "color": "#7aa2ff" },
+    { "id": "bookings", "name": "Bookings", "color": "#3b82f6" },
+    { "id": "customers", "name": "Customers + messaging", "color": "#06b6d4" },
+    { "id": "catalog", "name": "Catalog + offers", "color": "#14b8a6" },
+    { "id": "money", "name": "Earnings + payments", "color": "#22c55e" },
+    { "id": "insights", "name": "Insights + audit", "color": "#facc15" },
+    { "id": "comms", "name": "Email templates", "color": "#f97316" },
+    { "id": "team", "name": "Team", "color": "#f59e0b" },
+    { "id": "admin", "name": "Platform admin", "color": "#a855f7" },
+    { "id": "account", "name": "Account / settings", "color": "#94a3b8" },
+    { "id": "auth", "name": "Auth", "color": "#ef4444" },
+    { "id": "public", "name": "Public web", "color": "#e879f9" }
   ],
   "screens": [
     {
       "id": "pulse",
-      "name": "Pulse (Home)",
+      "name": "Pulse",
       "kind": "tab",
+      "group": "operations",
       "path": "src/screens/PulseScreen.tsx",
-      "description": "Manager/admin landing — analytics dashboard."
+      "roles": ["manager", "dispatcher"],
+      "components": ["KPI cards (revenue, bookings, conversions)", "DateField picker", "Period selector", "Heatmap", "LineChart", "Sparkline", "Export button"],
+      "navTo": ["board", "schedule"]
+    },
+    {
+      "id": "board",
+      "name": "Board (Kanban)",
+      "kind": "tab",
+      "group": "operations",
+      "path": "src/screens/DashboardScreen.tsx",
+      "roles": ["manager", "dispatcher"],
+      "components": ["Kanban columns (New/Consultation/Dispatched/Paid/Completed)", "DraggableCard", "SearchBar", "StatusPill", "CommunicationsRail"],
+      "navTo": ["booking-detail", "booking-new", "customers", "companies"]
     },
     {
       "id": "my-jobs",
       "name": "My Jobs",
       "kind": "tab",
+      "group": "operations",
       "path": "src/screens/MyAppointmentsScreen.tsx",
-      "description": "Worker landing — tabs: Dispatched / Paid / Completed / All."
+      "roles": ["worker", "manager", "dispatcher"],
+      "components": ["Status tabs (Dispatched/Paid/Completed/All)", "BookingRow", "EmptyState", "RefreshControl"],
+      "navTo": ["booking-detail", "booking-complete"]
     },
     {
-      "id": "settings",
-      "name": "Settings",
-      "kind": "screen",
-      "path": "src/screens/SettingsScreen.tsx"
-    },
-    {
-      "id": "team",
-      "name": "Team",
-      "kind": "screen",
-      "path": "src/screens/TeamScreen.tsx"
-    },
-    {
-      "id": "team-form",
-      "name": "Add user (modal)",
-      "kind": "modal",
-      "path": "src/screens/TeamScreen — UserFormModal",
-      "description": "Inline modal — name, email, phone, role dropdown."
-    },
-    {
-      "id": "login",
-      "name": "Login",
-      "kind": "screen"
-    },
-    {
-      "id": "out-of-band",
-      "name": "Out-of-band channel",
-      "kind": "out-of-band",
-      "description": "SMS, Slack, voice — wherever the manager passes the temp password."
+      "id": "schedule",
+      "name": "Schedule",
+      "kind": "tab",
+      "group": "operations",
+      "path": "src/screens/ScheduleScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["Month calendar", "Agenda view", "BookingRow", "DateNavigation", "TimeDisplay"],
+      "navTo": ["schedule-blocks", "booking-detail"]
     },
     {
       "id": "dispatch",
       "name": "Dispatch",
       "kind": "screen",
+      "group": "operations",
       "path": "src/screens/DispatchScreen.tsx",
-      "description": "Bookings grouped by date/status. Dispatcher's primary surface."
+      "roles": ["dispatcher"],
+      "components": ["BookingsList", "UserPicker", "WorkerPicker", "MapPin", "StatusPill"],
+      "navTo": ["booking-detail", "booking-new"]
     },
     {
-      "id": "booking-new",
-      "name": "New booking",
+      "id": "activity",
+      "name": "Activity feed",
       "kind": "screen",
-      "path": "src/screens/BookingNewScreen.tsx",
-      "description": "Multi-step form: customer → location → details (title, date, time, items, notes)."
+      "group": "insights",
+      "path": "src/screens/AuditFeedScreen.tsx",
+      "roles": ["manager"],
+      "components": ["AuditFeed timeline", "ActivityIcon", "Timestamp", "UserAction"],
+      "navTo": ["booking-detail", "customer-detail"]
     },
     {
       "id": "booking-detail",
       "name": "Booking detail",
       "kind": "screen",
+      "group": "bookings",
       "path": "src/screens/BookingDetailScreen.tsx",
-      "description": "Opens from Dispatch or MyAppointments. Status actions live here."
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["BookingTitle editor", "LocationEditor", "DateTimeField", "RelationField (customer/manager/workers)", "BookingItemsEditor", "ActivityFeed", "BookingPhotos", "StatusPill", "CompleteButton"],
+      "navTo": ["customer-detail", "offer-detail", "booking-edit", "booking-complete"]
     },
     {
-      "id": "complete-booking",
+      "id": "booking-new",
+      "name": "New booking",
+      "kind": "screen",
+      "group": "bookings",
+      "path": "src/screens/BookingNewScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["CustomerPicker (with create inline)", "LocationSelector", "ProductPicker", "DateField", "TimeField", "BookingItemsEditor"],
+      "navTo": ["booking-detail"]
+    },
+    {
+      "id": "booking-edit",
+      "name": "Edit booking",
+      "kind": "screen",
+      "group": "bookings",
+      "path": "src/screens/BookingEditScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["TitleEditor", "DateTimeField", "AddressEditor", "ItemsEditor", "PrimaryButton"]
+    },
+    {
+      "id": "booking-complete",
       "name": "Complete booking",
       "kind": "screen",
+      "group": "bookings",
       "path": "src/screens/CompleteBookingScreen.tsx",
-      "description": "Checklist items (text + photo upload) + 'Submit' to finalize."
+      "roles": ["dispatcher", "manager", "worker"],
+      "components": ["ChecklistReview", "PhotoCapture", "SignaturePad", "CompleteButton"]
     },
     {
-      "id": "push-notif",
-      "name": "Push notification",
-      "kind": "external",
-      "description": "(Not currently wired — see worker-accept-job note.)"
+      "id": "booking-form-editor",
+      "name": "Booking form builder",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/BookingFormEditorScreen.tsx",
+      "roles": ["admin"],
+      "components": ["FormFieldsList", "FieldTypeSelector", "FieldEditor", "PreviewPane", "SaveButton"]
     },
     {
-      "id": "customer-email",
-      "name": "Email inbox",
-      "kind": "email",
-      "description": "Customer's email client."
+      "id": "customers",
+      "name": "Customers",
+      "kind": "tab",
+      "group": "customers",
+      "path": "src/screens/CustomersScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["SearchInput", "FilterButton", "CustomerTable (desktop) / FlatList (mobile)", "MultiSelectModal", "CompanyFilter", "VerticalFilter"],
+      "navTo": ["customer-detail", "customer-new"]
     },
     {
-      "id": "review-page",
-      "name": "Public review page",
-      "kind": "web",
-      "path": "/reviews/{token}",
-      "description": "Token-gated. Served by the web bundle behind nginx; no native screen."
-    }
-  ],
-  "journeys": [
-    {
-      "id": "manager-invite",
-      "name": "Manager: invite + onboard a worker",
-      "primaryActor": "manager",
-      "description": "Manager creates the account from Settings → Team. There is no magic-link email — the API returns a temp password, which the manager passes to the worker out-of-band. The worker then signs in for the first time and lands on My Jobs.",
-      "tags": ["onboarding", "auth"],
-      "steps": [
-        {
-          "actor": "manager",
-          "on": "pulse",
-          "to": "settings",
-          "action": "Tap the Settings tab in the drawer/tab bar",
-          "kind": "tap"
-        },
-        {
-          "actor": "manager",
-          "on": "settings",
-          "to": "team",
-          "action": "Tap 'Team' in the settings list",
-          "kind": "tap"
-        },
-        {
-          "actor": "manager",
-          "on": "team",
-          "to": "team-form",
-          "action": "Tap the + button in the header",
-          "kind": "tap",
-          "note": "Opens UserFormModal inline — not a new route."
-        },
-        {
-          "actor": "manager",
-          "on": "team-form",
-          "to": "team",
-          "action": "Fill first_name, last_name, email, phone, role; tap Save",
-          "kind": "submit",
-          "server": {
-            "label": "POST /api/v1/users",
-            "returns": "{ data: UserResource, meta: { temp_password: '12-char Str::random()' } }",
-            "note": "Manager scope is force-pinned to actor.company_id. Application-role actors may pass company_id."
-          },
-          "note": "Toast lingers ~6s: 'Created Jane Doe. Temp password: ABCD-1234'. Modal closes; new row appears in Team."
-        },
-        {
-          "actor": "manager",
-          "on": "team",
-          "to": "out-of-band",
-          "action": "Copy the temp password and share it with the new worker (SMS / Slack / voice / etc.)",
-          "kind": "manual",
-          "note": "This is the only place the temp password is shown. If the manager loses it, they have to re-issue via the password-reset endpoint."
-        },
-        {
-          "actor": "worker",
-          "on": "out-of-band",
-          "to": "login",
-          "action": "Open the app, type their email + the temp password",
-          "kind": "open"
-        },
-        {
-          "actor": "worker",
-          "on": "login",
-          "to": "my-jobs",
-          "action": "Tap 'Sign in'",
-          "kind": "submit",
-          "server": {
-            "label": "POST /api/v1/auth/login",
-            "returns": "{ token: sanctum-pat, user: { id, email, role, company_id } }",
-            "note": "Throttled 30/min per IP. Sanctum token stored in AsyncStorage; subsequent requests carry `Authorization: Bearer …`."
-          },
-          "note": "Landing depends on role: Worker → My Jobs; Manager/installer → Pulse."
-        }
-      ]
+      "id": "customer-detail",
+      "name": "Customer detail",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/CustomerDetailScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["CustomerInfo card", "LocationsList", "BookingsTable", "ContactFields", "DeleteButton", "EditButton"],
+      "navTo": ["booking-detail", "customer-edit", "communication-new"]
     },
     {
-      "id": "dispatcher-create-dispatch",
-      "name": "Dispatcher: create + dispatch a booking",
-      "primaryActor": "dispatcher",
-      "description": "Dispatcher creates a booking on the multi-step form, then transitions it from 'Created' → 'Dispatched'. That status transition (not the create) is what fires the customer-facing confirmation email.",
-      "tags": ["bookings", "core"],
-      "steps": [
-        {
-          "actor": "dispatcher",
-          "on": "dispatch",
-          "to": "booking-new",
-          "action": "Tap 'New booking' on the Dispatch board",
-          "kind": "tap"
-        },
-        {
-          "actor": "dispatcher",
-          "on": "booking-new",
-          "action": "Pick or create the customer (step 1 of the form)",
-          "kind": "fill"
-        },
-        {
-          "actor": "dispatcher",
-          "on": "booking-new",
-          "action": "Pick the customer location (step 2)",
-          "kind": "fill",
-          "note": "RentCast enrichment runs on the address."
-        },
-        {
-          "actor": "dispatcher",
-          "on": "booking-new",
-          "to": "dispatch",
-          "action": "Fill title, date, time, items, workers; tap Save",
-          "kind": "submit",
-          "server": {
-            "label": "POST /api/v1/bookings",
-            "note": "BookingService::createForCompany inside a DB transaction. No email/notification yet — that fires on dispatch."
-          },
-          "note": "Lands back on the Dispatch board; the new booking appears in the 'Created' column."
-        },
-        {
-          "actor": "dispatcher",
-          "on": "dispatch",
-          "to": "booking-detail",
-          "action": "Tap the new booking card to open its detail",
-          "kind": "tap"
-        },
-        {
-          "actor": "dispatcher",
-          "on": "booking-detail",
-          "to": "booking-detail",
-          "action": "Tap 'Dispatch'",
-          "kind": "tap",
-          "server": {
-            "label": "POST /api/v1/bookings/{id}/dispatch",
-            "returns": "{ data: Booking, status: 'Dispatched' }",
-            "note": "Gate: billable product + appointment slot + valid address + ≥1 assigned worker. EmailService::sendBookingEmail(booking, 'booking_dispatched') is then called synchronously to the customer."
-          },
-          "note": "Status badge flips from 'Created' to 'Dispatched'. Customer receives the confirmation email."
-        }
-      ]
+      "id": "customer-new",
+      "name": "New customer",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/CustomerNewScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["FormFields (name, email, phone, address)", "PrimaryButton"],
+      "navTo": ["customer-detail"]
     },
     {
-      "id": "worker-accept-complete",
-      "name": "Worker: accept a dispatched job → mark complete",
-      "primaryActor": "worker",
-      "description": "Worker sees the dispatched job in the 'Dispatched' tab of My Jobs, opens it, runs through the checklist on Complete Booking, uploads photos, and submits. Once status flips to 'Completed', a background job emails the customer a review link (see customer-review).",
-      "tags": ["bookings", "field"],
-      "steps": [
-        {
-          "actor": "worker",
-          "on": "my-jobs",
-          "action": "Tap the 'Dispatched' tab to filter the list",
-          "kind": "tap"
-        },
-        {
-          "actor": "worker",
-          "on": "my-jobs",
-          "to": "booking-detail",
-          "action": "Tap a dispatched job row",
-          "kind": "tap",
-          "server": {
-            "label": "GET /api/v1/bookings/{id}",
-            "returns": "{ booking + items + workers + photos[] }"
-          }
-        },
-        {
-          "actor": "worker",
-          "on": "booking-detail",
-          "to": "booking-detail",
-          "action": "Step the status through 'On the way' → 'On site'",
-          "kind": "tap",
-          "server": {
-            "label": "PUT /api/v1/bookings/{id} (status field)",
-            "note": "Same endpoint as edit; status field is allowlisted."
-          },
-          "note": "Buttons share guards with the Kanban-drag rules — see BookingService::dispatch / completeBooking."
-        },
-        {
-          "actor": "worker",
-          "on": "booking-detail",
-          "to": "complete-booking",
-          "action": "Tap 'Complete'",
-          "kind": "tap"
-        },
-        {
-          "actor": "worker",
-          "on": "complete-booking",
-          "action": "Fill checklist text items + open the image picker for each photo slot",
-          "kind": "fill"
-        },
-        {
-          "actor": "worker",
-          "on": "complete-booking",
-          "to": "complete-booking",
-          "action": "For each photo: pick or capture with expo-image-picker",
-          "kind": "tap",
-          "server": {
-            "label": "POST /api/v1/bookings/upload-photo (multipart)",
-            "returns": "{ path: 'temp/bookings/{uuid}.{ext}' }",
-            "note": "PhotoUploadService::storeTemp only writes S3 temp/. No DB write yet — the path is held in mobile state and submitted with the rest of the form."
-          }
-        },
-        {
-          "actor": "worker",
-          "on": "complete-booking",
-          "to": "my-jobs",
-          "action": "Tap 'Submit'",
-          "kind": "submit",
-          "server": {
-            "label": "POST /api/v1/bookings/{id}/complete",
-            "note": "Booking.status flips to 'Completed' inside a transaction. PhotoUploadService::moveToBooking promotes the temp paths to permanent and writes them into bookings.photos (JSON array)."
-          },
-          "note": "Job disappears from 'Dispatched' tab; reappears in 'Completed'. The status change triggers the review email — see next journey."
-        }
-      ]
+      "id": "customer-edit",
+      "name": "Edit customer",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/CustomerEditScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["FormFields", "PrimaryButton", "DeleteButton"]
     },
     {
-      "id": "customer-review",
-      "name": "Customer: receive review email → submit NPS",
-      "primaryActor": "customer",
-      "description": "Triggered by the worker's 'Submit' in the previous journey. A model observer on Booking spots the status flip to 'Completed' and queues SendReviewRequestJob, which emails the customer a tokenized link.",
-      "tags": ["feedback", "public"],
-      "steps": [
-        {
-          "actor": "worker",
-          "on": "complete-booking",
-          "to": "customer-email",
-          "action": "(Triggered by the worker submitting in the previous journey)",
-          "kind": "wait",
-          "server": {
-            "label": "Booking::booted() observer → SendReviewRequestJob::dispatch(bookingId)",
-            "note": "Booking.php:37 — `wasChanged('status') && status === 'Completed'`. Job sends the email via EmailService (SendReviewRequestJob.php:54)."
-          },
-          "note": "Background job — runs on the queue worker, not in-request."
-        },
-        {
-          "actor": "customer",
-          "on": "customer-email",
-          "action": "See 'How did we do?' email in inbox",
-          "kind": "receive"
-        },
-        {
-          "actor": "customer",
-          "on": "customer-email",
-          "to": "review-page",
-          "action": "Tap the signed link in the email",
-          "kind": "tap",
-          "note": "Opens https://app/reviews/{token} in the browser. Served by the web bundle (nginx → /var/www/plutoapp-dist)."
-        },
-        {
-          "actor": "customer",
-          "on": "review-page",
-          "to": "review-page",
-          "action": "Page loads with booking summary + the review form",
-          "kind": "view",
-          "server": {
-            "label": "GET /api/v1/public/reviews/{token}",
-            "note": "Token-gated (signed). Throttled 60/min per IP."
-          }
-        },
-        {
-          "actor": "customer",
-          "on": "review-page",
-          "action": "Slide NPS 0–10, optionally pick tags, type a comment",
-          "kind": "fill"
-        },
-        {
-          "actor": "customer",
-          "on": "review-page",
-          "to": "review-page",
-          "action": "Tap Submit",
-          "kind": "submit",
-          "server": {
-            "label": "POST /api/v1/public/reviews/{token}",
-            "returns": "{ data: BookingReview }",
-            "note": "INSERT booking_reviews. Throttled 10/min per IP."
-          },
-          "note": "Page shows a thank-you state. The review surfaces internally in the ReviewsScreen for managers."
-        }
-      ]
+      "id": "inbox",
+      "name": "Inbox",
+      "kind": "tab",
+      "group": "customers",
+      "path": "src/screens/InboxScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["ThreadList", "SearchBar", "UnreadBadge", "LastMessage preview", "TimeAgo", "StatusPill"],
+      "navTo": ["thread"]
+    },
+    {
+      "id": "thread",
+      "name": "Message thread",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/ThreadScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["MessageList", "Compose input", "SendButton", "AttachmentButton", "UserAvatar"],
+      "navTo": ["booking-detail"]
+    },
+    {
+      "id": "communications",
+      "name": "Communication detail",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/CommunicationDetailScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["CommunicationBody", "RecipientsList", "LinkedBooking", "Metadata"],
+      "navTo": ["booking-detail", "customer-detail"]
+    },
+    {
+      "id": "communication-new",
+      "name": "New communication",
+      "kind": "screen",
+      "group": "customers",
+      "path": "src/screens/CommunicationNewScreen.tsx",
+      "roles": ["dispatcher", "manager"],
+      "components": ["RecipientPicker", "BodyEditor", "TemplateSelector", "SendButton"]
+    },
+    {
+      "id": "products",
+      "name": "Products",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/ProductsScreen.tsx",
+      "roles": ["manager"],
+      "components": ["ProductGrid", "ProductCard", "SearchBar", "PrimaryImage", "PriceDisplay"],
+      "navTo": ["product-detail"]
+    },
+    {
+      "id": "product-detail",
+      "name": "Product detail",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/ProductDetailScreen.tsx",
+      "roles": ["manager"],
+      "components": ["ProductImage", "PriceEditor", "DescriptionField", "ActiveToggle", "DeleteButton"]
+    },
+    {
+      "id": "offers",
+      "name": "Offers",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/OffersScreen.tsx",
+      "roles": ["manager"],
+      "components": ["StatusTabs (all/draft/sent/viewed/approved/declined)", "OfferRow", "TotalDisplay", "ExportButton", "CreateFAB"],
+      "navTo": ["offer-detail", "offer-builder"]
+    },
+    {
+      "id": "offer-builder",
+      "name": "Offer builder",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/OfferBuilderScreen.tsx",
+      "roles": ["manager"],
+      "components": ["CustomerNameInput", "ItemsTable (with add/remove)", "DiscountLines", "ChargeLines", "TotalDisplay", "SubmitButton"],
+      "navTo": ["offer-detail"]
+    },
+    {
+      "id": "offer-detail",
+      "name": "Offer detail",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/OfferDetailScreen.tsx",
+      "roles": ["manager"],
+      "components": ["CustomerInfo", "ItemsDisplay", "DiscountDisplay", "ChargeDisplay", "StatusPill", "SendButton", "ApprovalButtons"],
+      "navTo": ["booking-detail"]
+    },
+    {
+      "id": "checklists",
+      "name": "Checklists",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/ChecklistEditorScreen.tsx",
+      "roles": ["manager"],
+      "components": ["ChecklistList", "CreateButton", "EditButton", "ChecklistRow"],
+      "navTo": ["checklist-view"]
+    },
+    {
+      "id": "checklist-view",
+      "name": "View / execute checklist",
+      "kind": "screen",
+      "group": "catalog",
+      "path": "src/screens/ChecklistScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["ChecklistItems", "Checkboxes", "ItemComments", "ProgressBar", "SaveButton"]
+    },
+    {
+      "id": "earnings",
+      "name": "Earnings",
+      "kind": "tab",
+      "group": "money",
+      "path": "src/screens/WorkerEarningsScreen.tsx",
+      "roles": ["worker"],
+      "components": ["EarningsSummary card", "EarningsTable", "PayoutStatusBadge", "RoleLabel"],
+      "navTo": ["booking-detail", "payments"]
+    },
+    {
+      "id": "payments",
+      "name": "Payments",
+      "kind": "screen",
+      "group": "money",
+      "path": "src/screens/PaymentsScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker"],
+      "components": ["PaymentsList", "StatusFilter", "InvoiceNumber", "AmountDisplay", "DownloadButton"]
+    },
+    {
+      "id": "reviews",
+      "name": "Customer reviews",
+      "kind": "screen",
+      "group": "insights",
+      "path": "src/screens/ReviewsScreen.tsx",
+      "roles": ["manager"],
+      "components": ["RatingOverview card", "StarRating display", "ReviewDistributionChart", "ReviewList", "AverageRating"]
+    },
+    {
+      "id": "emails",
+      "name": "Email templates",
+      "kind": "screen",
+      "group": "comms",
+      "path": "src/screens/EmailManagementScreen.tsx",
+      "roles": ["manager"],
+      "components": ["TemplateList", "SearchBar", "CreateButton", "TemplateRow"],
+      "navTo": ["email-template-edit"]
+    },
+    {
+      "id": "email-template-edit",
+      "name": "Edit email template",
+      "kind": "screen",
+      "group": "comms",
+      "path": "src/screens/EmailTemplateEditScreen.tsx",
+      "roles": ["manager"],
+      "components": ["SubjectInput", "BodyEditor", "VariableInsertPanel", "PreviewPane", "SaveButton"]
+    },
+    {
+      "id": "team",
+      "name": "Team",
+      "kind": "screen",
+      "group": "team",
+      "path": "src/screens/TeamScreen.tsx",
+      "roles": ["manager"],
+      "components": ["UserList", "SearchBar", "RoleFilter", "UserRow", "ResetPasswordButton", "DeleteButton", "UserFormModal"],
+      "navTo": ["user-availability", "team-form"]
+    },
+    {
+      "id": "team-form",
+      "name": "Add / edit user",
+      "kind": "modal",
+      "group": "team",
+      "path": "src/screens/TeamScreen.tsx — UserFormModal",
+      "roles": ["manager"],
+      "components": ["first_name input", "last_name input", "email input", "phone input", "role dropdown", "Save button (returns meta.temp_password)"]
+    },
+    {
+      "id": "user-availability",
+      "name": "User availability",
+      "kind": "screen",
+      "group": "team",
+      "path": "src/screens/UserAvailabilityScreen.tsx",
+      "roles": ["manager"],
+      "components": ["AvailabilityCalendar", "TimeSlots", "BlockEditor", "PrimaryButton"]
+    },
+    {
+      "id": "schedule-blocks",
+      "name": "Schedule blocks",
+      "kind": "screen",
+      "group": "team",
+      "path": "src/screens/ScheduleBlocksScreen.tsx",
+      "roles": ["manager"],
+      "components": ["BlocksList", "DateHeader", "CreateModal", "EditModal", "DeleteButton"]
+    },
+    {
+      "id": "companies",
+      "name": "Companies",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/CompaniesScreen.tsx",
+      "roles": ["admin"],
+      "components": ["CompanyTable", "SearchBar", "CreateButton", "CompanyRow", "ActiveBadge"],
+      "navTo": ["company-detail", "company-form"]
+    },
+    {
+      "id": "company-detail",
+      "name": "Company detail",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/CompanyDetailScreen.tsx",
+      "roles": ["admin"],
+      "components": ["CompanyInfo card", "LocationsList (with LocationFormModal)", "ProductsCatalog", "MembersList", "ApplyVerticalCatalogButton", "DeleteButton"],
+      "navTo": ["company-form", "board", "team", "product-detail", "security-users"]
+    },
+    {
+      "id": "company-form",
+      "name": "Create / edit company",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/CompanyFormScreen.tsx",
+      "roles": ["admin"],
+      "components": ["NameInput", "SlugInput", "DescriptionField", "VerticalPicker", "ActiveToggle", "PrimaryButton"],
+      "navTo": ["company-detail"]
+    },
+    {
+      "id": "verticals",
+      "name": "Verticals",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/VerticalsScreen.tsx",
+      "roles": ["admin"],
+      "components": ["VerticalList", "SearchBar", "CreateButton", "VerticalRow", "VerticalEditorModal"],
+      "navTo": ["service-areas"]
+    },
+    {
+      "id": "service-areas",
+      "name": "Service areas (ZIP routing)",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/ZipRoutingScreen.tsx",
+      "roles": ["admin"],
+      "components": ["ZIPTable", "CompanySelector", "VerticalFilter", "CoverageMap", "EditButton"]
+    },
+    {
+      "id": "security-users",
+      "name": "Platform users",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/SecurityUsersScreen.tsx",
+      "roles": ["admin"],
+      "components": ["UserList", "SearchBar", "CompanyFilter", "RoleAssigner", "ResetPasswordModal", "DeleteButton", "EditModal"]
+    },
+    {
+      "id": "security-roles",
+      "name": "Roles + permissions",
+      "kind": "screen",
+      "group": "admin",
+      "path": "src/screens/SecurityRolesScreen.tsx",
+      "roles": ["admin"],
+      "components": ["RolesList", "PermissionsMatrix", "CreateButton", "EditModal", "DeleteButton"]
+    },
+    {
+      "id": "stripe-webhooks",
+      "name": "Stripe webhooks",
+      "kind": "screen",
+      "group": "insights",
+      "path": "src/screens/StripeWebhooksScreen.tsx",
+      "roles": ["admin"],
+      "components": ["WebhooksList", "EventTypeFilter", "TimestampDisplay", "PayloadViewer", "TestButton"]
+    },
+    {
+      "id": "email-activity",
+      "name": "Email activity",
+      "kind": "screen",
+      "group": "insights",
+      "path": "src/screens/EmailActivityScreen.tsx",
+      "roles": ["admin"],
+      "components": ["ActivityLog", "DateRangeFilter", "EventTypeFilter", "UserFilter", "SenderDisplay"]
+    },
+    {
+      "id": "password-audit",
+      "name": "Password audit",
+      "kind": "screen",
+      "group": "insights",
+      "path": "src/screens/PasswordAuditScreen.tsx",
+      "roles": ["admin"],
+      "components": ["AuditLog", "DateRangeFilter", "UserFilter", "ActionType (reset/change)", "Timestamp"]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "kind": "tab",
+      "group": "account",
+      "path": "src/screens/SettingsScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker", "admin"],
+      "components": ["SettingsMenu", "CompanyName", "WorkspaceInfo", "SignOutButton"],
+      "navTo": ["profile", "password", "appearance", "team", "emails", "reviews", "activity", "stripe-webhooks", "email-activity", "password-audit", "verticals", "service-areas", "security-users", "security-roles", "companies", "booking-form-editor"]
+    },
+    {
+      "id": "profile",
+      "name": "Profile",
+      "kind": "screen",
+      "group": "account",
+      "path": "src/screens/ProfileScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker", "admin"],
+      "components": ["UserAvatar", "NameDisplay", "EmailDisplay", "PhoneInput", "UpdateButton"]
+    },
+    {
+      "id": "password",
+      "name": "Change password",
+      "kind": "screen",
+      "group": "account",
+      "path": "src/screens/PasswordScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker", "admin"],
+      "components": ["CurrentPasswordInput", "NewPasswordInput", "ConfirmInput", "StrengthIndicator", "UpdateButton"]
+    },
+    {
+      "id": "appearance",
+      "name": "Appearance",
+      "kind": "screen",
+      "group": "account",
+      "path": "src/screens/AppearanceScreen.tsx",
+      "roles": ["manager", "dispatcher", "worker", "admin"],
+      "components": ["ThemeSelector (light/dark/auto)", "AccentColorPicker", "FontSizeSelector", "PreviewPane"]
+    },
+    {
+      "id": "login",
+      "name": "Sign in",
+      "kind": "auth",
+      "group": "auth",
+      "path": "src/screens/LoginScreen.tsx",
+      "roles": ["public"],
+      "components": ["LogoDisplay", "EmailInput", "PasswordInput", "RememberMeToggle", "SignInButton", "ForgotPasswordLink"],
+      "navTo": ["forgot-password", "pulse", "my-jobs"]
+    },
+    {
+      "id": "forgot-password",
+      "name": "Forgot password",
+      "kind": "auth",
+      "group": "auth",
+      "path": "src/screens/ForgotPasswordScreen.tsx",
+      "roles": ["public"],
+      "components": ["EmailInput", "SubmitButton", "BackToLoginLink", "SuccessMessage"],
+      "navTo": ["login"]
+    },
+    {
+      "id": "reset-password",
+      "name": "Reset password",
+      "kind": "auth",
+      "group": "auth",
+      "path": "src/screens/ResetPasswordScreen.tsx",
+      "roles": ["public"],
+      "components": ["PasswordInput", "ConfirmInput", "StrengthIndicator", "SubmitButton"],
+      "navTo": ["login"]
+    },
+    {
+      "id": "public-booking-funnel",
+      "name": "Public booking funnel",
+      "kind": "public",
+      "group": "public",
+      "path": "src/screens/PublicBookingFunnelScreen.tsx",
+      "roles": ["public"],
+      "components": ["ZIPGate (Step 0)", "ProductSelector (Step 1)", "ContactForm (Step 2)", "AddressForm", "PhotoCapture (Step 3)", "ReviewSummary (Step 4)", "SubmitButton", "OutOfServiceArea fallback"]
     }
   ]
 }

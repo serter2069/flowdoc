@@ -1,28 +1,17 @@
 import { z } from "zod";
 
 const ScreenKindSchema = z.enum([
-  "screen",
-  "modal",
   "tab",
   "drawer",
+  "screen",
+  "modal",
+  "auth",
+  "public",
+  "nested",
   "external",
-  "email",
-  "web",
-  "out-of-band",
 ]);
 
-const StepKindSchema = z.enum([
-  "tap",
-  "swipe",
-  "fill",
-  "submit",
-  "open",
-  "receive",
-  "view",
-  "manual",
-  "wait",
-  "decision",
-]);
+const EdgeKindSchema = z.enum(["nav", "modal", "back", "deeplink", "tab", "external"]);
 
 const RoleSchema = z.object({
   id: z.string().regex(/^[a-z0-9_-]+$/i),
@@ -32,80 +21,91 @@ const RoleSchema = z.object({
   description: z.string().optional(),
 });
 
+const GroupSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_-]+$/i),
+  name: z.string(),
+  color: z.string().optional(),
+  description: z.string().optional(),
+});
+
 const ScreenSchema = z.object({
   id: z.string().regex(/^[a-z0-9_:-]+$/i, "id may contain letters, digits, _, -, :"),
   name: z.string(),
   kind: ScreenKindSchema.default("screen"),
+  group: z.string().optional(),
   path: z.string().optional(),
   description: z.string().optional(),
+  roles: z.array(z.string()).optional(),
+  components: z.array(z.string()).optional(),
+  navTo: z.array(z.string()).optional(),
 });
 
-const ServerCallSchema = z.object({
-  label: z.string(),
-  note: z.string().optional(),
-  returns: z.string().optional(),
-});
-
-const StepSchema = z.object({
-  actor: z.string(),
-  on: z.string(),
-  action: z.string(),
-  to: z.string().optional(),
-  kind: StepKindSchema.optional(),
-  server: ServerCallSchema.optional(),
-  note: z.string().optional(),
-});
-
-const JourneySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  primaryActor: z.string(),
-  tags: z.array(z.string()).optional(),
-  steps: z.array(StepSchema).min(1),
+const EdgeSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  label: z.string().optional(),
+  kind: EdgeKindSchema.optional(),
 });
 
 export const FlowDocSchema = z.object({
-  title: z.string().default("User journeys"),
+  title: z.string().default("Sitemap"),
   subtitle: z.string().optional(),
-  roles: z.array(RoleSchema).min(1),
+  roles: z.array(RoleSchema).optional(),
+  groups: z.array(GroupSchema).optional(),
   screens: z.array(ScreenSchema).min(1),
-  journeys: z.array(JourneySchema).min(1),
+  edges: z.array(EdgeSchema).optional(),
 });
 
 export type FlowDoc = z.infer<typeof FlowDocSchema>;
 export type Role = z.infer<typeof RoleSchema>;
 export type Screen = z.infer<typeof ScreenSchema>;
-export type Step = z.infer<typeof StepSchema>;
-export type Journey = z.infer<typeof JourneySchema>;
-export type ServerCall = z.infer<typeof ServerCallSchema>;
+export type Edge = z.infer<typeof EdgeSchema>;
+export type Group = z.infer<typeof GroupSchema>;
+export type ScreenKind = z.infer<typeof ScreenKindSchema>;
+export type EdgeKind = z.infer<typeof EdgeKindSchema>;
 
 export function validateFlowDoc(raw: unknown): FlowDoc {
   const doc = FlowDocSchema.parse(raw);
-  const roleIds = new Set(doc.roles.map((r) => r.id));
   const screenIds = new Set(doc.screens.map((s) => s.id));
+  const groupIds = new Set((doc.groups ?? []).map((g) => g.id));
+  const roleIds = new Set((doc.roles ?? []).map((r) => r.id));
 
-  for (const j of doc.journeys) {
-    if (!roleIds.has(j.primaryActor)) {
-      throw new Error(`Journey "${j.id}": unknown primaryActor "${j.primaryActor}"`);
+  for (const s of doc.screens) {
+    if (s.group && groupIds.size && !groupIds.has(s.group)) {
+      throw new Error(`Screen "${s.id}": unknown group "${s.group}"`);
     }
-    for (const [i, step] of j.steps.entries()) {
-      if (!roleIds.has(step.actor)) {
-        throw new Error(
-          `Journey "${j.id}" step ${i + 1}: unknown actor "${step.actor}"`
-        );
+    for (const r of s.roles ?? []) {
+      if (roleIds.size && !roleIds.has(r)) {
+        throw new Error(`Screen "${s.id}": unknown role "${r}"`);
       }
-      if (!screenIds.has(step.on)) {
-        throw new Error(
-          `Journey "${j.id}" step ${i + 1}: unknown screen "${step.on}"`
-        );
-      }
-      if (step.to && !screenIds.has(step.to)) {
-        throw new Error(
-          `Journey "${j.id}" step ${i + 1}: unknown screen "${step.to}"`
-        );
+    }
+    for (const target of s.navTo ?? []) {
+      if (!screenIds.has(target)) {
+        throw new Error(`Screen "${s.id}".navTo: unknown screen "${target}"`);
       }
     }
   }
+  for (const [i, e] of (doc.edges ?? []).entries()) {
+    if (!screenIds.has(e.from)) {
+      throw new Error(`edges[${i}]: unknown screen "${e.from}"`);
+    }
+    if (!screenIds.has(e.to)) {
+      throw new Error(`edges[${i}]: unknown screen "${e.to}"`);
+    }
+  }
   return doc;
+}
+
+/** Get all edges, both from screen.navTo and from explicit edges[]. */
+export function collectEdges(doc: FlowDoc): Edge[] {
+  const out: Edge[] = [];
+  for (const s of doc.screens) {
+    for (const target of s.navTo ?? []) {
+      out.push({ from: s.id, to: target, kind: "nav" });
+    }
+  }
+  for (const e of doc.edges ?? []) {
+    out.push(e);
+  }
+  return out;
 }
