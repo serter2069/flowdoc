@@ -33,7 +33,7 @@ body,
 
 .app {
   display: grid;
-  grid-template-columns: 280px 1fr 360px;
+  grid-template-columns: 300px 1fr 380px;
   grid-template-rows: 56px 1fr;
   height: 100vh;
 }
@@ -74,6 +74,7 @@ body,
   border-radius: 999px;
 }
 
+/* ── Sidebar ───────────────────────────────────────────────── */
 .sidebar {
   background: var(--panel);
   border-right: 1px solid var(--border);
@@ -81,11 +82,45 @@ body,
 }
 
 .sidebar .section {
-  padding: 14px 16px 6px;
+  padding: 14px 16px 8px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
+}
+
+.sidebar .role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  background: var(--panel-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: transform 100ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.role-chip:hover {
+  background: var(--bg-elevated);
+}
+
+.role-chip.active {
+  background: color-mix(in srgb, var(--role-color, var(--accent)) 22%, var(--panel-soft));
+  border-color: var(--role-color, var(--accent));
+}
+
+.role-chip .role-icon {
+  color: var(--role-color, var(--accent));
 }
 
 .sidebar .search {
@@ -114,7 +149,7 @@ body,
 }
 
 .sidebar .flow-list li {
-  margin: 0 8px 4px;
+  margin: 0 8px 6px;
   padding: 10px 12px;
   border-radius: 8px;
   cursor: pointer;
@@ -122,6 +157,8 @@ body,
   flex-direction: column;
   gap: 4px;
   border: 1px solid transparent;
+  border-left: 3px solid var(--role-color, var(--border));
+  background: transparent;
 }
 
 .sidebar .flow-list li:hover {
@@ -130,12 +167,20 @@ body,
 
 .sidebar .flow-list li.active {
   background: var(--panel-soft);
-  border-color: var(--accent);
+  border-color: var(--role-color, var(--accent));
+  border-left-width: 3px;
 }
 
 .sidebar .flow-list .name {
   font-weight: 600;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.role-icon-inline {
+  font-size: 14px;
 }
 
 .sidebar .flow-list .desc {
@@ -161,6 +206,7 @@ body,
   padding: 2px 6px;
 }
 
+/* ── Canvas ─────────────────────────────────────────────── */
 .canvas {
   position: relative;
   background:
@@ -169,6 +215,84 @@ body,
     var(--bg);
 }
 
+/* Screen node */
+.screen-node {
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-width: 180px;
+  max-width: 220px;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease;
+}
+
+.screen-node .screen-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.screen-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: #0b1020;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.screen-kind {
+  font-size: 16px;
+}
+
+.screen-name {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.screen-pathline {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-actor {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* React Flow edges */
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.flow-counter {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 5;
+}
+
+/* ── Detail panel ────────────────────────────────────── */
 .detail {
   background: var(--panel);
   border-left: 1px solid var(--border);
@@ -203,21 +327,19 @@ body,
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 14px;
-  position: relative;
+  border-left: 3px solid var(--role-color, var(--accent));
 }
 
 .detail .step .head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 600;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail .step .num {
   font-size: 12px;
   color: var(--bg);
-  background: var(--accent);
+  background: var(--role-color, var(--accent));
   border-radius: 999px;
   width: 22px;
   height: 22px;
@@ -226,43 +348,15 @@ body,
   justify-content: center;
   font-weight: 700;
   flex-shrink: 0;
-  align-self: center;
 }
 
-.detail .step .arrow {
-  color: var(--text-muted);
-}
-
-.detail .step .label {
-  display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.actor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
   font-size: 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  padding: 6px 8px;
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  overflow-x: auto;
-}
-
-.detail .step .note {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  margin-top: 8px;
-}
-
-.detail .step .payload {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg);
-  border-radius: 6px;
-  padding: 6px 8px;
-  margin-top: 6px;
-  border: 1px solid var(--border);
-  white-space: pre-wrap;
-  word-break: break-word;
+  color: var(--role-color, var(--text));
 }
 
 .kind-chip {
@@ -276,60 +370,94 @@ body,
   margin-left: auto;
 }
 
-/* React Flow nodes */
-.pkg-node {
-  background: var(--panel);
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  min-width: 180px;
-  color: var(--text);
-  box-shadow: var(--shadow);
-  transition:
-    border-color 160ms ease,
-    opacity 160ms ease,
-    transform 160ms ease;
-}
-
-.pkg-node .pkg-head {
+.detail .step .screen-row {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.pkg-node .pkg-icon {
-  font-size: 18px;
-}
-
-.pkg-node .pkg-name {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.pkg-node .pkg-kind {
-  margin-top: 4px;
-  font-size: 11px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
-.pkg-node .pkg-path {
-  margin-top: 6px;
-  font-size: 11px;
+.screen-pill {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.screen-pill .screen-path {
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
 }
 
-.pkg-node.is-active {
-  border-color: var(--accent);
-  box-shadow:
-    0 0 0 2px rgba(122, 162, 255, 0.18),
-    var(--shadow);
+.detail .step .arrow {
+  color: var(--text-muted);
 }
 
-.pkg-node.is-dimmed {
-  opacity: 0.25;
+.detail .step .action {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.detail .step .note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.server-chip {
+  margin-top: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.server-chip .server-icon {
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.server-chip code {
+  color: var(--text);
+  font-family: inherit;
+}
+
+.server-chip .returns {
+  color: var(--text-muted);
+}
+
+.server-chip .server-note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.handoff {
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--highlight);
+  background: rgba(242, 192, 70, 0.08);
+  border: 1px dashed rgba(242, 192, 70, 0.4);
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 
 .empty {
@@ -343,42 +471,9 @@ body,
   padding: 20px;
 }
 
-.react-flow__edge-path {
-  stroke-width: 1.5;
-}
-
-.react-flow__edge.is-active .react-flow__edge-path {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-}
-
-.react-flow__edge.is-dimmed .react-flow__edge-path {
-  stroke: var(--border);
-  opacity: 0.35;
-}
-
-.edge-step-label {
-  font-size: 11px;
-  fill: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.flow-counter {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-  z-index: 5;
-}
-
 @media (max-width: 1100px) {
   .app {
-    grid-template-columns: 240px 1fr 300px;
+    grid-template-columns: 260px 1fr 320px;
   }
 }
 
@@ -388,9 +483,9 @@ body,
     grid-template-rows: 56px auto 1fr auto;
   }
   .sidebar {
-    max-height: 200px;
+    max-height: 220px;
   }
   .detail {
-    max-height: 300px;
+    max-height: 320px;
   }
 }

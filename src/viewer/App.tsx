@@ -1,17 +1,26 @@
 import { useMemo, useState } from "react";
-import type { Flow, FlowDoc } from "../schema";
-import { FlowGraph } from "./components/FlowGraph";
-import { FlowSidebar } from "./components/FlowSidebar";
-import { FlowDetail } from "./components/FlowDetail";
+import type { FlowDoc, Journey } from "../schema";
+import { JourneyGraph } from "./components/JourneyGraph";
+import { JourneySidebar } from "./components/JourneySidebar";
+import { JourneyDetail } from "./components/JourneyDetail";
 
 export function App({ data }: { data: FlowDoc }) {
-  const [activeFlowId, setActiveFlowId] = useState<string | null>(
-    data.flows[0]?.id ?? null
+  const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
+  const [activeJourneyId, setActiveJourneyId] = useState<string | null>(
+    data.journeys[0]?.id ?? null
   );
 
-  const activeFlow = useMemo<Flow | null>(
-    () => data.flows.find((f) => f.id === activeFlowId) ?? null,
-    [activeFlowId, data.flows]
+  const filteredJourneys = useMemo<Journey[]>(() => {
+    if (!activeRoleId) return data.journeys;
+    return data.journeys.filter((j) => {
+      if (j.primaryActor === activeRoleId) return true;
+      return j.steps.some((s) => s.actor === activeRoleId);
+    });
+  }, [data.journeys, activeRoleId]);
+
+  const activeJourney = useMemo<Journey | null>(
+    () => data.journeys.find((j) => j.id === activeJourneyId) ?? null,
+    [activeJourneyId, data.journeys]
   );
 
   return (
@@ -22,28 +31,52 @@ export function App({ data }: { data: FlowDoc }) {
           {data.subtitle ? <span className="sub">{data.subtitle}</span> : null}
         </div>
         <span className="badge">
-          {data.packages.length} packages · {data.flows.length} flows
+          {data.roles.length} roles · {data.screens.length} screens ·{" "}
+          {data.journeys.length} journeys
         </span>
       </header>
 
-      <FlowSidebar
-        flows={data.flows}
-        activeFlowId={activeFlowId}
-        onSelect={setActiveFlowId}
+      <JourneySidebar
+        roles={data.roles}
+        journeys={filteredJourneys}
+        totalJourneys={data.journeys.length}
+        activeRoleId={activeRoleId}
+        activeJourneyId={activeJourneyId}
+        onRoleSelect={(id) => {
+          setActiveRoleId(id);
+          // if the active journey doesn't include this role, pick the first one that does
+          if (id && activeJourney && activeJourney.primaryActor !== id) {
+            const first = data.journeys.find(
+              (j) => j.primaryActor === id || j.steps.some((s) => s.actor === id)
+            );
+            if (first) setActiveJourneyId(first.id);
+          }
+        }}
+        onJourneySelect={setActiveJourneyId}
       />
 
       <main className="canvas">
-        <FlowGraph packages={data.packages} activeFlow={activeFlow} />
-        {activeFlow ? (
+        <JourneyGraph
+          screens={data.screens}
+          roles={data.roles}
+          activeJourney={activeJourney}
+        />
+        {activeJourney ? (
           <div className="flow-counter">
-            {activeFlow.steps.length} step{activeFlow.steps.length === 1 ? "" : "s"} ·{" "}
-            {new Set(activeFlow.steps.flatMap((s) => [s.from, s.to])).size} packages
+            {activeJourney.steps.length} step
+            {activeJourney.steps.length === 1 ? "" : "s"} ·{" "}
+            {new Set(activeJourney.steps.map((s) => s.actor)).size} actor
+            {new Set(activeJourney.steps.map((s) => s.actor)).size === 1 ? "" : "s"}
           </div>
         ) : null}
       </main>
 
       <aside className="detail">
-        <FlowDetail flow={activeFlow} packages={data.packages} />
+        <JourneyDetail
+          journey={activeJourney}
+          roles={data.roles}
+          screens={data.screens}
+        />
       </aside>
     </div>
   );

@@ -1,14 +1,16 @@
 # flowdoc
 
-> Document workflows between packages and components as a clickable, animated diagram — driven entirely by a JSON file. Works in any repo, optimized for React Native / Expo monorepos.
+> Document your app's **user journeys** as a clickable, role-filtered diagram — driven entirely by a JSON file. Works in any repo, optimized for React Native / Expo monorepos.
 
-Pick an action ("Invite new user", "EAS build", "Stripe Connect onboarding"…) and `flowdoc` highlights the path through your packages and annotates how data moves between them. The output is a single self-contained HTML file — no server, no CDN, drop it anywhere.
+Pick a role (Manager / Worker / Customer…) and a journey ("Invite + onboard a teammate", "Accept a job → mark complete", "Submit a review")  and `flowdoc` highlights the screen-to-screen path your user actually takes, annotating every tap, form, and the backend call sitting behind it. The output is a single self-contained HTML file — no server, no CDN, drop it anywhere.
 
-![Pluto demo — sidebar of flows, animated React Flow canvas, step-by-step detail panel](docs/preview.png)
+![Pluto demo — role chips, role-colored journey list, screen-node canvas with action-labeled edges, step-by-step detail panel](docs/preview.png)
+
+**Live demo:** https://serter2069.github.io/flowdoc/examples/pluto/flowdoc.html
 
 ## Why
 
-When a system spans many packages — an Expo app, an API, a queue, a third-party like Stripe, a build pipeline — *what calls what* is the question that takes new contributors days to answer. Reading a hundred files to understand "how does an invite email actually get sent?" is a chore. `flowdoc` lets you write that path down once, in JSON, and renders it as a clickable diagram.
+"How does *this thing* actually work for a Manager? for a Worker? for the Customer?" is the question that takes new contributors days to answer. They squint at a flat list of routes or controllers and never see the human path through the product. `flowdoc` lets you write that path down once, in JSON, and renders it as a click-by-click diagram with role swimlanes, screens-as-nodes, and the backend-calls-that-matter pinned to the steps that trigger them.
 
 ## Install
 
@@ -35,18 +37,14 @@ That's it. Open `flowdoc.html` in any browser — no server required.
 
 ## Example: Pluto
 
-[`examples/pluto/flows.json`](examples/pluto/flows.json) documents 8 real flows on a multi-tenant booking platform (Expo app + Laravel API + MySQL + Stripe Connect + Postmark + EAS):
+[`examples/pluto/flows.json`](examples/pluto/flows.json) documents 4 cross-role journeys on a multi-tenant booking platform (Expo app + Laravel API):
 
-| Flow | What it shows |
+| Journey | What it traces |
 | --- | --- |
-| User login | `app → api → db → app` with the Sanctum token |
-| Invite new user | API hops through the queue + Postmark and writes back the user row |
-| Create a booking | DB inserts + push notifications + customer confirmation email |
-| Upload a job photo | Multipart → S3 → DB metadata |
-| Stripe Connect onboarding | API ↔ Stripe + webhook callback for `account.updated` |
-| Customer review (token-gated) | Outbound email → tokenized public link → API submit |
-| EAS build | `eas build` → native compile → App Store / Play submit |
-| Web build (`expo export`) | Static bundle → nginx → API origin |
+| **Manager: invite + onboard a worker** | Pulse → Settings → Team → +Add user → temp_password toast → manager passes pwd out-of-band → worker signs in → My Jobs |
+| **Dispatcher: create + dispatch a booking** | Dispatch → New booking (multi-step) → back to Dispatch → tap booking → Dispatch button (this is what sends the customer email) |
+| **Worker: accept dispatched job → mark complete** | My Jobs (Dispatched tab) → Booking detail → status walks 'On the way' / 'On site' → Complete Booking → photo upload → Submit |
+| **Customer: receive review email → submit NPS** | Worker submits → observer queues `SendReviewRequestJob` → customer email → tokenized `/reviews/{token}` web page → POST review |
 
 ```bash
 git clone https://github.com/serter2069/flowdoc.git
@@ -57,58 +55,64 @@ open pluto.html
 
 ## The JSON
 
-Two top-level arrays: `packages` (nodes) and `flows` (clickable actions, each a list of `steps` between packages).
+Three top-level arrays: `roles`, `screens`, and `journeys` (each journey is a list of `steps` taken by an actor moving between screens).
 
 ```json
 {
   "title": "My App",
-  "subtitle": "Workflows between packages and components",
-  "packages": [
-    { "id": "app", "name": "Mobile App", "kind": "client", "icon": "📱",
-      "tech": ["Expo", "React Native"], "path": "app/" },
-    { "id": "api", "name": "API", "kind": "server", "icon": "🌐", "path": "api/" },
-    { "id": "db", "name": "Database", "kind": "database", "icon": "🗄️" },
-    { "id": "mail", "name": "Mail", "kind": "external", "icon": "✉️" }
+  "subtitle": "User journeys",
+  "roles": [
+    { "id": "manager", "name": "Manager", "icon": "🧑‍💼", "color": "#7aa2ff" },
+    { "id": "worker",  "name": "Worker",  "icon": "🛠️",  "color": "#22c55e" }
   ],
-  "flows": [
+  "screens": [
+    { "id": "home",    "name": "Home",     "kind": "tab",    "path": "/(tabs)/home" },
+    { "id": "team",    "name": "Team",     "kind": "screen", "path": "/settings/team" },
+    { "id": "team-form","name": "Add user","kind": "modal" },
+    { "id": "out-of-band", "name": "Out-of-band", "kind": "out-of-band" }
+  ],
+  "journeys": [
     {
       "id": "invite-user",
-      "name": "Invite new user",
-      "description": "Admin invites a teammate; magic-link email bootstraps the account.",
+      "name": "Manager: invite + onboard a teammate",
+      "primaryActor": "manager",
+      "description": "Manager creates the account; temp password goes out-of-band; new user signs in.",
       "tags": ["onboarding"],
       "steps": [
-        { "from": "app", "to": "api", "kind": "http",
-          "label": "POST /invites",
-          "payload": { "email": "string", "role": "worker | admin" },
-          "note": "Triggered from Settings → Team → Invite." },
-        { "from": "api", "to": "db", "kind": "db",
-          "label": "INSERT INTO invites",
-          "payload": "Invite{ token, email, role, expires_at }" },
-        { "from": "api", "to": "mail", "kind": "event",
-          "label": "send invitation email",
-          "note": "Signed link → /accept-invite?t=..." },
-        { "from": "api", "to": "app", "kind": "http",
-          "label": "201 Created",
-          "payload": { "inviteId": "uuid" } }
+        { "actor": "manager", "on": "home", "to": "team", "action": "Tap Settings → Team", "kind": "tap" },
+        { "actor": "manager", "on": "team", "to": "team-form",
+          "action": "Tap '+ Add user'", "kind": "tap" },
+        { "actor": "manager", "on": "team-form", "to": "team",
+          "action": "Fill form, tap Save", "kind": "submit",
+          "server": { "label": "POST /api/v1/users",
+                      "returns": "{ meta: { temp_password: string } }" },
+          "note": "Toast: 'Temp password: ABCD-1234'." },
+        { "actor": "manager", "on": "team", "to": "out-of-band",
+          "action": "Share the temp password (SMS / Slack / etc.)", "kind": "manual" }
       ]
     }
   ]
 }
 ```
 
-### Package kinds
+### Role fields
+`id`, `name`, `icon?`, `color?` (hex; used to tint nodes/edges/chips), `description?`.
 
-`client`, `server`, `database`, `external`, `build`, `queue`, `cache`, `storage`, `function`, `other`.
-
-These are labels rendered on the node — they don't change behavior. Pick whichever fits.
+### Screen kinds
+`screen` · `modal` · `tab` · `drawer` · `external` · `email` · `web` · `out-of-band`.
+Pure labels; pick whichever fits.
 
 ### Step kinds
+`tap` · `swipe` · `fill` · `submit` · `open` · `receive` · `view` · `manual` · `wait` · `decision`. Optional. Rendered as a chip on the step.
 
-`http`, `rpc`, `queue`, `event`, `build`, `manual`, `db`, `other`. Optional; rendered as a chip on the step.
+### Step shape
+- `actor`: which role is performing the action
+- `on`: screen they're on
+- `to`: screen they end up on (omit if they stay on `on`)
+- `action`: human description ("Tap the + button", "Fill name + email")
+- `server`: `{label, returns?, note?}` — pinned to the step when a backend call is what makes the next screen appear
 
-### Payloads
-
-`payload` can be either a string (free-form, rendered as-is) or an object (JSON, pretty-printed).
+Actor changes between steps render as a "handoff" marker — useful for multi-role journeys (manager creates account → worker logs in).
 
 ## Output
 

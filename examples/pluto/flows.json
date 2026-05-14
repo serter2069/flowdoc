@@ -1,410 +1,400 @@
 {
   "title": "Pluto / StreamlinePro",
-  "subtitle": "Multi-tenant booking platform — workflows between app, API, and integrations",
-  "packages": [
+  "subtitle": "User journeys — what happens when you tap, by role",
+  "roles": [
     {
-      "id": "app",
-      "name": "Expo App",
-      "kind": "client",
-      "icon": "📱",
-      "tech": ["Expo SDK 55", "React Native 0.83", "TypeScript", "NativeWind"],
-      "path": "app/",
-      "description": "The same codebase ships to iOS, Android, and web via react-native-web."
+      "id": "manager",
+      "name": "Manager",
+      "icon": "🧑‍💼",
+      "color": "#7aa2ff",
+      "description": "Company-scope admin. Sees Pulse landing, can invite users, edit company settings."
     },
     {
-      "id": "api",
-      "name": "Laravel API",
-      "kind": "server",
-      "icon": "🌐",
-      "tech": ["Laravel 12", "PHP 8.3", "Sanctum", "Spatie Permission"],
-      "path": "api/"
+      "id": "dispatcher",
+      "name": "Dispatcher",
+      "icon": "📋",
+      "color": "#22c55e",
+      "description": "Schedules and assigns work. Lives in DispatchScreen and creates bookings."
     },
     {
-      "id": "db",
-      "name": "MySQL",
-      "kind": "database",
-      "icon": "🗄️",
-      "tech": ["MySQL 8"]
-    },
-    {
-      "id": "queue",
-      "name": "Laravel Queue",
-      "kind": "queue",
-      "icon": "⏱️",
-      "description": "Background jobs (e.g. SendReviewRequestJob)."
-    },
-    {
-      "id": "mail",
-      "name": "Email (EmailService)",
-      "kind": "external",
-      "icon": "✉️",
-      "description": "All transactional mail funnels through App\\Services\\EmailService::sendBookingEmail()."
-    },
-    {
-      "id": "stripe",
-      "name": "Stripe Connect",
-      "kind": "external",
-      "icon": "💳",
-      "description": "Connected (Express) accounts for companies + workers; webhooks flip onboarding status."
-    },
-    {
-      "id": "s3",
-      "name": "S3",
-      "kind": "storage",
-      "icon": "📦",
-      "description": "Filesystem default disk — used for temp + final booking photos."
-    },
-    {
-      "id": "eas",
-      "name": "EAS Build",
-      "kind": "build",
+      "id": "worker",
+      "name": "Worker",
       "icon": "🛠️",
-      "description": "Expo Application Services — native iOS/Android binaries, configured in app/eas.json."
+      "color": "#f59e0b",
+      "description": "Field installer. Lives in MyAppointments; runs jobs from BookingDetail."
     },
     {
-      "id": "stores",
-      "name": "App Stores",
-      "kind": "external",
-      "icon": "🏪",
-      "description": "TestFlight / Google Play internal-track release."
-    },
-    {
-      "id": "web",
-      "name": "Web Bundle (nginx)",
-      "kind": "external",
-      "icon": "🌍",
-      "description": "Static expo-export bundle served from /var/www/plutoapp-dist by nginx."
+      "id": "customer",
+      "name": "Customer",
+      "icon": "👤",
+      "color": "#e879f9",
+      "description": "End-customer of a booked service. Touches the app only via emailed token links."
     }
   ],
-  "flows": [
+  "screens": [
     {
-      "id": "login",
-      "name": "User login",
-      "description": "Mobile/web user authenticates against the Laravel API and receives a Sanctum personal access token.",
-      "tags": ["auth", "everyday"],
-      "steps": [
-        {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/auth/login",
-          "payload": { "email": "string", "password": "string" },
-          "note": "Throttled to 30/min per IP at the route layer (api.php:52)."
-        },
-        {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "SELECT user + roles",
-          "note": "PasswordAuditService also writes a hit/miss row for rate-limit + anomaly detection."
-        },
-        {
-          "from": "api",
-          "to": "app",
-          "kind": "http",
-          "label": "200 OK",
-          "payload": { "token": "sanctum-pat", "user": "{ id, email, role, company_id }" },
-          "note": "Mobile stores the token; subsequent requests carry it as `Authorization: Bearer …`."
-        }
-      ]
+      "id": "pulse",
+      "name": "Pulse (Home)",
+      "kind": "tab",
+      "path": "src/screens/PulseScreen.tsx",
+      "description": "Manager/admin landing — analytics dashboard."
     },
     {
-      "id": "invite-user",
-      "name": "Invite new user (temp-password handoff)",
-      "description": "Admin/Manager creates a teammate account. There is no magic-link email — the API returns a temporary password in the response that the admin shares out-of-band.",
+      "id": "my-jobs",
+      "name": "My Jobs",
+      "kind": "tab",
+      "path": "src/screens/MyAppointmentsScreen.tsx",
+      "description": "Worker landing — tabs: Dispatched / Paid / Completed / All."
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "kind": "screen",
+      "path": "src/screens/SettingsScreen.tsx"
+    },
+    {
+      "id": "team",
+      "name": "Team",
+      "kind": "screen",
+      "path": "src/screens/TeamScreen.tsx"
+    },
+    {
+      "id": "team-form",
+      "name": "Add user (modal)",
+      "kind": "modal",
+      "path": "src/screens/TeamScreen — UserFormModal",
+      "description": "Inline modal — name, email, phone, role dropdown."
+    },
+    {
+      "id": "login",
+      "name": "Login",
+      "kind": "screen"
+    },
+    {
+      "id": "out-of-band",
+      "name": "Out-of-band channel",
+      "kind": "out-of-band",
+      "description": "SMS, Slack, voice — wherever the manager passes the temp password."
+    },
+    {
+      "id": "dispatch",
+      "name": "Dispatch",
+      "kind": "screen",
+      "path": "src/screens/DispatchScreen.tsx",
+      "description": "Bookings grouped by date/status. Dispatcher's primary surface."
+    },
+    {
+      "id": "booking-new",
+      "name": "New booking",
+      "kind": "screen",
+      "path": "src/screens/BookingNewScreen.tsx",
+      "description": "Multi-step form: customer → location → details (title, date, time, items, notes)."
+    },
+    {
+      "id": "booking-detail",
+      "name": "Booking detail",
+      "kind": "screen",
+      "path": "src/screens/BookingDetailScreen.tsx",
+      "description": "Opens from Dispatch or MyAppointments. Status actions live here."
+    },
+    {
+      "id": "complete-booking",
+      "name": "Complete booking",
+      "kind": "screen",
+      "path": "src/screens/CompleteBookingScreen.tsx",
+      "description": "Checklist items (text + photo upload) + 'Submit' to finalize."
+    },
+    {
+      "id": "push-notif",
+      "name": "Push notification",
+      "kind": "external",
+      "description": "(Not currently wired — see worker-accept-job note.)"
+    },
+    {
+      "id": "customer-email",
+      "name": "Email inbox",
+      "kind": "email",
+      "description": "Customer's email client."
+    },
+    {
+      "id": "review-page",
+      "name": "Public review page",
+      "kind": "web",
+      "path": "/reviews/{token}",
+      "description": "Token-gated. Served by the web bundle behind nginx; no native screen."
+    }
+  ],
+  "journeys": [
+    {
+      "id": "manager-invite",
+      "name": "Manager: invite + onboard a worker",
+      "primaryActor": "manager",
+      "description": "Manager creates the account from Settings → Team. There is no magic-link email — the API returns a temp password, which the manager passes to the worker out-of-band. The worker then signs in for the first time and lands on My Jobs.",
       "tags": ["onboarding", "auth"],
       "steps": [
         {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/users",
-          "payload": { "first_name": "string", "last_name": "string", "email": "string", "phone_number": "string?", "role": "Worker | Dispatcher | Manager", "company_id": "int?", "password": "string?" },
-          "note": "Triggered from Settings → Team → Add user. UserController::store; gated to actors with an application role or 'Manager'."
+          "actor": "manager",
+          "on": "pulse",
+          "to": "settings",
+          "action": "Tap the Settings tab in the drawer/tab bar",
+          "kind": "tap"
         },
         {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "INSERT users + role assignment",
-          "payload": "User{ id, email, company_id, password=Hash(temp), is_active }; pivot row on roles via Spatie Permission",
-          "note": "Manager scope is forced to actor.company_id; Application-role actors can pick company_id."
+          "actor": "manager",
+          "on": "settings",
+          "to": "team",
+          "action": "Tap 'Team' in the settings list",
+          "kind": "tap"
         },
         {
-          "from": "api",
-          "to": "app",
-          "kind": "http",
-          "label": "201 Created",
-          "payload": { "data": "UserResource", "meta": { "temp_password": "12-char Str::random()" } },
-          "note": "`meta.temp_password` is only present when the caller did NOT supply a password. Admin reads it out-of-band to the new user. There is no automated invitation email."
-        }
-      ]
-    },
-    {
-      "id": "create-booking",
-      "name": "Create a booking",
-      "description": "Dispatcher creates a job. Insert is transactional via BookingService::createForCompany; no email/notification is sent at this stage — that happens on dispatch (see next flow).",
-      "tags": ["bookings", "core"],
-      "steps": [
+          "actor": "manager",
+          "on": "team",
+          "to": "team-form",
+          "action": "Tap the + button in the header",
+          "kind": "tap",
+          "note": "Opens UserFormModal inline — not a new route."
+        },
         {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/bookings",
-          "payload": {
-            "customer_id": "uuid",
-            "service_area_id": "int",
-            "appointment_date": "date",
-            "appointment_time": "HH:mm",
-            "items": "BookingItem[]",
-            "workers": "userId[]"
+          "actor": "manager",
+          "on": "team-form",
+          "to": "team",
+          "action": "Fill first_name, last_name, email, phone, role; tap Save",
+          "kind": "submit",
+          "server": {
+            "label": "POST /api/v1/users",
+            "returns": "{ data: UserResource, meta: { temp_password: '12-char Str::random()' } }",
+            "note": "Manager scope is force-pinned to actor.company_id. Application-role actors may pass company_id."
           },
-          "note": "BookingController::store delegates to BookingService::createForCompany inside a DB transaction."
+          "note": "Toast lingers ~6s: 'Created Jane Doe. Temp password: ABCD-1234'. Modal closes; new row appears in Team."
         },
         {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "INSERT bookings + booking_workers + booking_items (transactional)",
-          "note": "Late-assign notification only fires if the booking is already Dispatched (see BookingService.php:553)."
+          "actor": "manager",
+          "on": "team",
+          "to": "out-of-band",
+          "action": "Copy the temp password and share it with the new worker (SMS / Slack / voice / etc.)",
+          "kind": "manual",
+          "note": "This is the only place the temp password is shown. If the manager loses it, they have to re-issue via the password-reset endpoint."
         },
         {
-          "from": "api",
-          "to": "app",
-          "kind": "http",
-          "label": "201 Created",
-          "payload": { "data": "BookingResource" }
+          "actor": "worker",
+          "on": "out-of-band",
+          "to": "login",
+          "action": "Open the app, type their email + the temp password",
+          "kind": "open"
+        },
+        {
+          "actor": "worker",
+          "on": "login",
+          "to": "my-jobs",
+          "action": "Tap 'Sign in'",
+          "kind": "submit",
+          "server": {
+            "label": "POST /api/v1/auth/login",
+            "returns": "{ token: sanctum-pat, user: { id, email, role, company_id } }",
+            "note": "Throttled 30/min per IP. Sanctum token stored in AsyncStorage; subsequent requests carry `Authorization: Bearer …`."
+          },
+          "note": "Landing depends on role: Worker → My Jobs; Manager/installer → Pulse."
         }
       ]
     },
     {
-      "id": "dispatch-booking",
-      "name": "Dispatch booking → customer email",
-      "description": "Once the booking has a billable product, an appointment slot, an address, and at least one worker, the dispatcher transitions it to 'Dispatched'. This is what triggers the customer-facing confirmation email.",
+      "id": "dispatcher-create-dispatch",
+      "name": "Dispatcher: create + dispatch a booking",
+      "primaryActor": "dispatcher",
+      "description": "Dispatcher creates a booking on the multi-step form, then transitions it from 'Created' → 'Dispatched'. That status transition (not the create) is what fires the customer-facing confirmation email.",
       "tags": ["bookings", "core"],
       "steps": [
         {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/bookings/{id}/dispatch",
-          "note": "BookingController::dispatch → BookingService::dispatch."
+          "actor": "dispatcher",
+          "on": "dispatch",
+          "to": "booking-new",
+          "action": "Tap 'New booking' on the Dispatch board",
+          "kind": "tap"
         },
         {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "UPDATE bookings SET status='Dispatched'",
-          "note": "Guarded: validates billable product, appointment, address, ≥1 assigned worker (BookingService.php:597)."
+          "actor": "dispatcher",
+          "on": "booking-new",
+          "action": "Pick or create the customer (step 1 of the form)",
+          "kind": "fill"
         },
         {
-          "from": "api",
-          "to": "mail",
-          "kind": "event",
-          "label": "EmailService::sendBookingEmail(booking, 'booking_dispatched')",
-          "note": "Synchronous send, not queued. Independent of worker emails (BookingService.php:642)."
+          "actor": "dispatcher",
+          "on": "booking-new",
+          "action": "Pick the customer location (step 2)",
+          "kind": "fill",
+          "note": "RentCast enrichment runs on the address."
+        },
+        {
+          "actor": "dispatcher",
+          "on": "booking-new",
+          "to": "dispatch",
+          "action": "Fill title, date, time, items, workers; tap Save",
+          "kind": "submit",
+          "server": {
+            "label": "POST /api/v1/bookings",
+            "note": "BookingService::createForCompany inside a DB transaction. No email/notification yet — that fires on dispatch."
+          },
+          "note": "Lands back on the Dispatch board; the new booking appears in the 'Created' column."
+        },
+        {
+          "actor": "dispatcher",
+          "on": "dispatch",
+          "to": "booking-detail",
+          "action": "Tap the new booking card to open its detail",
+          "kind": "tap"
+        },
+        {
+          "actor": "dispatcher",
+          "on": "booking-detail",
+          "to": "booking-detail",
+          "action": "Tap 'Dispatch'",
+          "kind": "tap",
+          "server": {
+            "label": "POST /api/v1/bookings/{id}/dispatch",
+            "returns": "{ data: Booking, status: 'Dispatched' }",
+            "note": "Gate: billable product + appointment slot + valid address + ≥1 assigned worker. EmailService::sendBookingEmail(booking, 'booking_dispatched') is then called synchronously to the customer."
+          },
+          "note": "Status badge flips from 'Created' to 'Dispatched'. Customer receives the confirmation email."
         }
       ]
     },
     {
-      "id": "upload-job-photo",
-      "name": "Upload a job photo",
-      "description": "Worker captures a photo with expo-image-picker. The API only stores it in S3 temp-space and returns the path — the path is later written into bookings.photos (a JSON column) when the booking is saved.",
-      "tags": ["bookings", "media"],
+      "id": "worker-accept-complete",
+      "name": "Worker: accept a dispatched job → mark complete",
+      "primaryActor": "worker",
+      "description": "Worker sees the dispatched job in the 'Dispatched' tab of My Jobs, opens it, runs through the checklist on Complete Booking, uploads photos, and submits. Once status flips to 'Completed', a background job emails the customer a review link (see customer-review).",
+      "tags": ["bookings", "field"],
       "steps": [
         {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/bookings/upload-photo (multipart)",
-          "payload": { "photo": "binary (UploadPhotoRequest)" },
-          "note": "BookingController::uploadPhoto delegates to PhotoUploadService::storeTemp."
+          "actor": "worker",
+          "on": "my-jobs",
+          "action": "Tap the 'Dispatched' tab to filter the list",
+          "kind": "tap"
         },
         {
-          "from": "api",
-          "to": "s3",
-          "kind": "rpc",
-          "label": "putObject(temp/bookings/{uuid}.{ext})",
-          "note": "Streamed via Laravel's default filesystem disk (S3 in prod)."
+          "actor": "worker",
+          "on": "my-jobs",
+          "to": "booking-detail",
+          "action": "Tap a dispatched job row",
+          "kind": "tap",
+          "server": {
+            "label": "GET /api/v1/bookings/{id}",
+            "returns": "{ booking + items + workers + photos[] }"
+          }
         },
         {
-          "from": "api",
-          "to": "app",
-          "kind": "http",
-          "label": "201 Created",
-          "payload": { "path": "temp/bookings/{uuid}.{ext}" },
-          "note": "Mobile holds the path; sends it back later as part of the booking PUT. PhotoUploadService::moveToBooking then promotes temp → permanent path and the value lands in bookings.photos (JSON array)."
-        }
-      ]
-    },
-    {
-      "id": "stripe-onboarding",
-      "name": "Stripe Connect onboarding",
-      "description": "Worker (or company owner) connects a Stripe Express account so they can receive payouts. The webhook is what flips onboarding to 'verified'.",
-      "tags": ["payments", "onboarding"],
-      "steps": [
-        {
-          "from": "app",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/stripe/onboarding/worker",
-          "note": "User taps 'Connect Stripe' on the Earnings screen. (api.php:402)"
+          "actor": "worker",
+          "on": "booking-detail",
+          "to": "booking-detail",
+          "action": "Step the status through 'On the way' → 'On site'",
+          "kind": "tap",
+          "server": {
+            "label": "PUT /api/v1/bookings/{id} (status field)",
+            "note": "Same endpoint as edit; status field is allowlisted."
+          },
+          "note": "Buttons share guards with the Kanban-drag rules — see BookingService::dispatch / completeBooking."
         },
         {
-          "from": "api",
-          "to": "stripe",
-          "kind": "rpc",
-          "label": "accounts.create + accountLinks.create",
-          "payload": { "type": "express", "capabilities": ["transfers"] },
-          "note": "StripeOnboardingController.php:141, :162."
+          "actor": "worker",
+          "on": "booking-detail",
+          "to": "complete-booking",
+          "action": "Tap 'Complete'",
+          "kind": "tap"
         },
         {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "UPDATE users SET stripe_account_id, stripe_onboarding_status='pending'"
+          "actor": "worker",
+          "on": "complete-booking",
+          "action": "Fill checklist text items + open the image picker for each photo slot",
+          "kind": "fill"
         },
         {
-          "from": "api",
-          "to": "app",
-          "kind": "http",
-          "label": "200 OK",
-          "payload": { "onboardingUrl": "https://connect.stripe.com/setup/…" },
-          "note": "Mobile opens the URL in an in-app browser."
+          "actor": "worker",
+          "on": "complete-booking",
+          "to": "complete-booking",
+          "action": "For each photo: pick or capture with expo-image-picker",
+          "kind": "tap",
+          "server": {
+            "label": "POST /api/v1/bookings/upload-photo (multipart)",
+            "returns": "{ path: 'temp/bookings/{uuid}.{ext}' }",
+            "note": "PhotoUploadService::storeTemp only writes S3 temp/. No DB write yet — the path is held in mobile state and submitted with the rest of the form."
+          }
         },
         {
-          "from": "stripe",
-          "to": "api",
-          "kind": "event",
-          "label": "Webhook: account.updated",
-          "note": "Signature-verified by StripeWebhookController (line 115-226). Flips status to 'verified' once charges_enabled = true."
-        },
-        {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "UPDATE users SET stripe_onboarding_status='verified'"
+          "actor": "worker",
+          "on": "complete-booking",
+          "to": "my-jobs",
+          "action": "Tap 'Submit'",
+          "kind": "submit",
+          "server": {
+            "label": "POST /api/v1/bookings/{id}/complete",
+            "note": "Booking.status flips to 'Completed' inside a transaction. PhotoUploadService::moveToBooking promotes the temp paths to permanent and writes them into bookings.photos (JSON array)."
+          },
+          "note": "Job disappears from 'Dispatched' tab; reappears in 'Completed'. The status change triggers the review email — see next journey."
         }
       ]
     },
     {
       "id": "customer-review",
-      "name": "Customer review (token-gated)",
-      "description": "When a booking flips to 'Completed', the Booking model observer queues SendReviewRequestJob, which emails the customer a tokenized link. The customer fills it out without logging in.",
-      "tags": ["public", "feedback"],
+      "name": "Customer: receive review email → submit NPS",
+      "primaryActor": "customer",
+      "description": "Triggered by the worker's 'Submit' in the previous journey. A model observer on Booking spots the status flip to 'Completed' and queues SendReviewRequestJob, which emails the customer a tokenized link.",
+      "tags": ["feedback", "public"],
       "steps": [
         {
-          "from": "db",
-          "to": "api",
-          "kind": "event",
-          "label": "Booking::booted() observer: status→'Completed'",
-          "note": "Booking.php:37 — wasChanged('status') && status === 'Completed' → SendReviewRequestJob::dispatch($id)."
+          "actor": "worker",
+          "on": "complete-booking",
+          "to": "customer-email",
+          "action": "(Triggered by the worker submitting in the previous journey)",
+          "kind": "wait",
+          "server": {
+            "label": "Booking::booted() observer → SendReviewRequestJob::dispatch(bookingId)",
+            "note": "Booking.php:37 — `wasChanged('status') && status === 'Completed'`. Job sends the email via EmailService (SendReviewRequestJob.php:54)."
+          },
+          "note": "Background job — runs on the queue worker, not in-request."
         },
         {
-          "from": "api",
-          "to": "queue",
-          "kind": "queue",
-          "label": "dispatch(SendReviewRequestJob)",
-          "payload": { "bookingId": "int" }
+          "actor": "customer",
+          "on": "customer-email",
+          "action": "See 'How did we do?' email in inbox",
+          "kind": "receive"
         },
         {
-          "from": "queue",
-          "to": "mail",
-          "kind": "event",
-          "label": "EmailService → 'How did we do?' email",
-          "note": "SendReviewRequestJob.php:54."
+          "actor": "customer",
+          "on": "customer-email",
+          "to": "review-page",
+          "action": "Tap the signed link in the email",
+          "kind": "tap",
+          "note": "Opens https://app/reviews/{token} in the browser. Served by the web bundle (nginx → /var/www/plutoapp-dist)."
         },
         {
-          "from": "mail",
-          "to": "web",
-          "kind": "manual",
-          "label": "Customer clicks the signed link",
-          "note": "Opens https://app/reviews/{token}."
+          "actor": "customer",
+          "on": "review-page",
+          "to": "review-page",
+          "action": "Page loads with booking summary + the review form",
+          "kind": "view",
+          "server": {
+            "label": "GET /api/v1/public/reviews/{token}",
+            "note": "Token-gated (signed). Throttled 60/min per IP."
+          }
         },
         {
-          "from": "web",
-          "to": "api",
-          "kind": "http",
-          "label": "GET /api/v1/public/reviews/{token}",
-          "note": "Throttled 60/min per IP (api.php:77). Returns booking summary + form config."
+          "actor": "customer",
+          "on": "review-page",
+          "action": "Slide NPS 0–10, optionally pick tags, type a comment",
+          "kind": "fill"
         },
         {
-          "from": "web",
-          "to": "api",
-          "kind": "http",
-          "label": "POST /api/v1/public/reviews/{token}",
-          "payload": { "nps": "0..10", "comment": "string", "tags": "string[]" }
-        },
-        {
-          "from": "api",
-          "to": "db",
-          "kind": "db",
-          "label": "INSERT booking_reviews"
-        }
-      ]
-    },
-    {
-      "id": "eas-build",
-      "name": "Native release — eas build (manual)",
-      "description": "There is no `eas build` script in app/package.json — it's run ad-hoc against the profiles in app/eas.json (development / preview / production).",
-      "tags": ["release", "mobile"],
-      "steps": [
-        {
-          "from": "app",
-          "to": "eas",
-          "kind": "build",
-          "label": "eas build --profile production --platform all",
-          "note": "Reads app/eas.json. Production profile uses channel='production', autoIncrement=true."
-        },
-        {
-          "from": "eas",
-          "to": "eas",
-          "kind": "build",
-          "label": "expo prebuild + native compile (iOS & Android)",
-          "note": "Runs on EAS-hosted macOS/Linux workers. appVersionSource='remote' — version is managed by EAS."
-        },
-        {
-          "from": "eas",
-          "to": "stores",
-          "kind": "rpc",
-          "label": "eas submit → App Store Connect / Play Console",
-          "note": "Manual / out-of-CI. Gated on a successful build."
-        },
-        {
-          "from": "stores",
-          "to": "app",
-          "kind": "manual",
-          "label": "TestFlight / Play internal track",
-          "note": "Smoke-tested before promoting to production."
-        }
-      ]
-    },
-    {
-      "id": "web-deploy",
-      "name": "Web deploy — pluto-pull.sh",
-      "description": "Same Expo codebase exported as a static web bundle and rsynced to nginx. Driven by deploy/pluto-pull.sh on the server (CD-pull style).",
-      "tags": ["release", "web"],
-      "steps": [
-        {
-          "from": "app",
-          "to": "app",
-          "kind": "build",
-          "label": "npx expo export --platform web",
-          "note": "Equivalent to `npm run build:web` (EXPO_UNSTABLE_TREE_SHAKING=true expo export -p web --output-dir dist)."
-        },
-        {
-          "from": "app",
-          "to": "web",
-          "kind": "rpc",
-          "label": "rsync dist/ → /var/www/plutoapp-dist",
-          "note": "deploy/pluto-pull.sh:100. nginx serves the static bundle from there."
-        },
-        {
-          "from": "web",
-          "to": "api",
-          "kind": "http",
-          "label": "EXPO_PUBLIC_API_BASE_URL → /api/v1",
-          "note": "Web bundle calls the same API as native via CORS-allowed origin."
+          "actor": "customer",
+          "on": "review-page",
+          "to": "review-page",
+          "action": "Tap Submit",
+          "kind": "submit",
+          "server": {
+            "label": "POST /api/v1/public/reviews/{token}",
+            "returns": "{ data: BookingReview }",
+            "note": "INSERT booking_reviews. Throttled 10/min per IP."
+          },
+          "note": "Page shows a thank-you state. The review surfaces internally in the ReviewsScreen for managers."
         }
       ]
     }

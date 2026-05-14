@@ -1,73 +1,108 @@
 import { z } from "zod";
 
-const PackageKindSchema = z.enum([
-  "client",
-  "server",
-  "database",
+const ScreenKindSchema = z.enum([
+  "screen",
+  "modal",
+  "tab",
+  "drawer",
   "external",
-  "build",
-  "queue",
-  "cache",
-  "storage",
-  "function",
-  "other",
+  "email",
+  "web",
+  "out-of-band",
 ]);
 
-const PackageSchema = z.object({
-  id: z.string().regex(/^[a-z0-9_-]+$/i, "id must be alphanumeric / dash / underscore"),
+const StepKindSchema = z.enum([
+  "tap",
+  "swipe",
+  "fill",
+  "submit",
+  "open",
+  "receive",
+  "view",
+  "manual",
+  "wait",
+  "decision",
+]);
+
+const RoleSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_-]+$/i),
   name: z.string(),
-  kind: PackageKindSchema.default("other"),
   icon: z.string().optional(),
-  description: z.string().optional(),
-  tech: z.array(z.string()).optional(),
-  path: z.string().optional(),
   color: z.string().optional(),
+  description: z.string().optional(),
+});
+
+const ScreenSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_:-]+$/i, "id may contain letters, digits, _, -, :"),
+  name: z.string(),
+  kind: ScreenKindSchema.default("screen"),
+  path: z.string().optional(),
+  description: z.string().optional(),
+});
+
+const ServerCallSchema = z.object({
+  label: z.string(),
+  note: z.string().optional(),
+  returns: z.string().optional(),
 });
 
 const StepSchema = z.object({
-  from: z.string(),
-  to: z.string(),
-  label: z.string(),
+  actor: z.string(),
+  on: z.string(),
+  action: z.string(),
+  to: z.string().optional(),
+  kind: StepKindSchema.optional(),
+  server: ServerCallSchema.optional(),
   note: z.string().optional(),
-  payload: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
-  kind: z
-    .enum(["http", "rpc", "queue", "event", "build", "manual", "db", "other"])
-    .optional(),
 });
 
-const FlowSchema = z.object({
+const JourneySchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
+  primaryActor: z.string(),
   tags: z.array(z.string()).optional(),
   steps: z.array(StepSchema).min(1),
 });
 
 export const FlowDocSchema = z.object({
-  title: z.string().default("Workflows"),
+  title: z.string().default("User journeys"),
   subtitle: z.string().optional(),
-  packages: z.array(PackageSchema).min(1),
-  flows: z.array(FlowSchema).min(1),
+  roles: z.array(RoleSchema).min(1),
+  screens: z.array(ScreenSchema).min(1),
+  journeys: z.array(JourneySchema).min(1),
 });
 
 export type FlowDoc = z.infer<typeof FlowDocSchema>;
-export type Package = z.infer<typeof PackageSchema>;
-export type Flow = z.infer<typeof FlowSchema>;
+export type Role = z.infer<typeof RoleSchema>;
+export type Screen = z.infer<typeof ScreenSchema>;
 export type Step = z.infer<typeof StepSchema>;
+export type Journey = z.infer<typeof JourneySchema>;
+export type ServerCall = z.infer<typeof ServerCallSchema>;
 
 export function validateFlowDoc(raw: unknown): FlowDoc {
   const doc = FlowDocSchema.parse(raw);
-  const pkgIds = new Set(doc.packages.map((p) => p.id));
-  for (const flow of doc.flows) {
-    for (const [i, step] of flow.steps.entries()) {
-      if (!pkgIds.has(step.from)) {
+  const roleIds = new Set(doc.roles.map((r) => r.id));
+  const screenIds = new Set(doc.screens.map((s) => s.id));
+
+  for (const j of doc.journeys) {
+    if (!roleIds.has(j.primaryActor)) {
+      throw new Error(`Journey "${j.id}": unknown primaryActor "${j.primaryActor}"`);
+    }
+    for (const [i, step] of j.steps.entries()) {
+      if (!roleIds.has(step.actor)) {
         throw new Error(
-          `Flow "${flow.id}" step ${i + 1}: unknown package id "${step.from}"`
+          `Journey "${j.id}" step ${i + 1}: unknown actor "${step.actor}"`
         );
       }
-      if (!pkgIds.has(step.to)) {
+      if (!screenIds.has(step.on)) {
         throw new Error(
-          `Flow "${flow.id}" step ${i + 1}: unknown package id "${step.to}"`
+          `Journey "${j.id}" step ${i + 1}: unknown screen "${step.on}"`
+        );
+      }
+      if (step.to && !screenIds.has(step.to)) {
+        throw new Error(
+          `Journey "${j.id}" step ${i + 1}: unknown screen "${step.to}"`
         );
       }
     }
