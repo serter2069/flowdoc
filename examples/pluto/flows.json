@@ -1,0 +1,413 @@
+{
+  "title": "Pluto / StreamlinePro",
+  "subtitle": "Multi-tenant booking platform — workflows between app, API, and integrations",
+  "packages": [
+    {
+      "id": "app",
+      "name": "Expo App",
+      "kind": "client",
+      "icon": "📱",
+      "tech": ["Expo SDK 55", "React Native 0.83", "TypeScript", "NativeWind"],
+      "path": "app/",
+      "description": "The same codebase ships to iOS, Android, and web via react-native-web."
+    },
+    {
+      "id": "api",
+      "name": "Laravel API",
+      "kind": "server",
+      "icon": "🌐",
+      "tech": ["Laravel 12", "PHP 8.3", "Sanctum", "Spatie Permission"],
+      "path": "api/"
+    },
+    {
+      "id": "db",
+      "name": "MySQL",
+      "kind": "database",
+      "icon": "🗄️",
+      "tech": ["MySQL 8"]
+    },
+    {
+      "id": "queue",
+      "name": "Laravel Queue",
+      "kind": "queue",
+      "icon": "⏱️",
+      "tech": ["Redis", "Horizon"],
+      "description": "Background jobs: emails, exports, notifications."
+    },
+    {
+      "id": "mail",
+      "name": "Postmark",
+      "kind": "external",
+      "icon": "✉️",
+      "description": "Transactional mail provider."
+    },
+    {
+      "id": "push",
+      "name": "Expo Push",
+      "kind": "external",
+      "icon": "🔔",
+      "description": "Expo push-notification service for iOS/Android."
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe Connect",
+      "kind": "external",
+      "icon": "💳",
+      "description": "Connected accounts for companies + workers; payouts."
+    },
+    {
+      "id": "s3",
+      "name": "S3",
+      "kind": "storage",
+      "icon": "📦",
+      "description": "Photo + document uploads."
+    },
+    {
+      "id": "eas",
+      "name": "EAS Build",
+      "kind": "build",
+      "icon": "🛠️",
+      "description": "Expo Application Services — native iOS/Android binaries."
+    },
+    {
+      "id": "stores",
+      "name": "App Stores",
+      "kind": "external",
+      "icon": "🏪",
+      "description": "TestFlight, Google Play internal/closed/open tracks."
+    },
+    {
+      "id": "web",
+      "name": "Web Bundle (CDN)",
+      "kind": "external",
+      "icon": "🌍",
+      "description": "Static export of the Expo app served by nginx."
+    }
+  ],
+  "flows": [
+    {
+      "id": "login",
+      "name": "User login",
+      "description": "Mobile/web user authenticates against the Laravel API and receives a Sanctum token.",
+      "tags": ["auth", "everyday"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/auth/login",
+          "payload": { "email": "string", "password": "string" },
+          "note": "Throttled to 30/min per IP at the route layer."
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "SELECT user + roles",
+          "payload": "users + role_user + permissions",
+          "note": "PasswordAuditService also writes a hit/miss row for rate-limit + anomaly detection."
+        },
+        {
+          "from": "api",
+          "to": "app",
+          "kind": "http",
+          "label": "200 OK",
+          "payload": { "token": "sanctum-pat", "user": "{id,email,role,company_id}" },
+          "note": "Mobile stores the token in AsyncStorage; subsequent requests carry it as Bearer."
+        }
+      ]
+    },
+    {
+      "id": "invite-user",
+      "name": "Invite new user",
+      "description": "Admin invites a teammate by email; a signed link bootstraps the new account.",
+      "tags": ["onboarding", "auth"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/users (role=worker)",
+          "payload": { "email": "string", "name": "string", "role": "worker|dispatcher|admin" },
+          "note": "Triggered from Settings → Team → Invite."
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "INSERT users + role assignment",
+          "payload": "User{id, email, role, company_id, invite_token, password_set_at=null}"
+        },
+        {
+          "from": "api",
+          "to": "queue",
+          "kind": "queue",
+          "label": "dispatch(SendInvitationMail)",
+          "payload": "InvitationJob{userId, inviteToken}"
+        },
+        {
+          "from": "queue",
+          "to": "mail",
+          "kind": "event",
+          "label": "Postmark API: send invitation",
+          "note": "Magic link: https://app/accept-invite?t=…"
+        },
+        {
+          "from": "api",
+          "to": "app",
+          "kind": "http",
+          "label": "201 Created",
+          "payload": { "user": "{id, email, role}" },
+          "note": "Mobile shows a success toast."
+        }
+      ]
+    },
+    {
+      "id": "create-booking",
+      "name": "Create a booking",
+      "description": "Dispatcher schedules a job; worker(s) are assigned, notified, and the customer is reachable for confirmations.",
+      "tags": ["bookings", "core"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/bookings",
+          "payload": {
+            "customer_id": "uuid",
+            "service_area_id": "uuid",
+            "scheduled_at": "ISO-8601",
+            "items": "BookingItem[]",
+            "workers": "userId[]"
+          }
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "INSERT booking + booking_workers + booking_items",
+          "payload": "Booking, BookingWorker, BookingItem"
+        },
+        {
+          "from": "api",
+          "to": "queue",
+          "kind": "queue",
+          "label": "dispatch(NotifyAssignedWorkers)"
+        },
+        {
+          "from": "queue",
+          "to": "push",
+          "kind": "event",
+          "label": "Expo push to each assigned worker's device tokens",
+          "payload": { "title": "New job assigned", "data": { "bookingId": "uuid" } }
+        },
+        {
+          "from": "queue",
+          "to": "mail",
+          "kind": "event",
+          "label": "send confirmation to customer (Postmark)"
+        },
+        {
+          "from": "api",
+          "to": "app",
+          "kind": "http",
+          "label": "201 Created",
+          "payload": { "booking": "{id, scheduled_at, workers, items}" }
+        }
+      ]
+    },
+    {
+      "id": "upload-job-photo",
+      "name": "Upload a job photo",
+      "description": "Worker on-site captures a before/after photo; it lands in S3 and is linked to the booking.",
+      "tags": ["bookings", "media"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/bookings/upload-photo (multipart)",
+          "payload": { "booking_id": "uuid", "file": "binary" },
+          "note": "expo-image-picker captures the photo; mobile encodes as multipart."
+        },
+        {
+          "from": "api",
+          "to": "s3",
+          "kind": "rpc",
+          "label": "putObject(bookings/{id}/photos/{uuid}.jpg)",
+          "note": "Stream straight from Laravel filesystem driver — no temp file on the API host."
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "INSERT booking_photos",
+          "payload": "BookingPhoto{ booking_id, key, taken_at, uploaded_by }"
+        },
+        {
+          "from": "api",
+          "to": "app",
+          "kind": "http",
+          "label": "201 Created",
+          "payload": { "photo": "{ id, url, taken_at }" }
+        }
+      ]
+    },
+    {
+      "id": "stripe-onboarding",
+      "name": "Stripe Connect onboarding",
+      "description": "Worker (or company owner) connects a Stripe account so they can receive payouts.",
+      "tags": ["payments", "onboarding"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/stripe/onboarding/worker",
+          "note": "User taps 'Connect Stripe' on the Earnings screen."
+        },
+        {
+          "from": "api",
+          "to": "stripe",
+          "kind": "rpc",
+          "label": "accounts.create + accountLinks.create",
+          "payload": { "type": "express", "country": "US", "capabilities": ["transfers"] }
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "UPDATE users SET stripe_account_id, stripe_onboarding_status='pending'"
+        },
+        {
+          "from": "api",
+          "to": "app",
+          "kind": "http",
+          "label": "200 OK",
+          "payload": { "onboardingUrl": "https://connect.stripe.com/setup/…" },
+          "note": "Mobile opens the URL in an in-app browser (WebBrowser.openAuthSessionAsync)."
+        },
+        {
+          "from": "stripe",
+          "to": "api",
+          "kind": "event",
+          "label": "Webhook: account.updated",
+          "note": "Signature-verified by StripeWebhookController; flips status to 'verified' on charges_enabled=true."
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "UPDATE users SET stripe_onboarding_status='verified'"
+        }
+      ]
+    },
+    {
+      "id": "customer-review",
+      "name": "Customer review (token-gated)",
+      "description": "Customer receives a tokenized review link by email post-job; submits NPS + comment without logging in.",
+      "tags": ["public", "feedback"],
+      "steps": [
+        {
+          "from": "queue",
+          "to": "mail",
+          "kind": "event",
+          "label": "Postmark: send 'How did we do?' email",
+          "note": "Triggered by BookingCompletedListener after booking.status=completed."
+        },
+        {
+          "from": "mail",
+          "to": "web",
+          "kind": "manual",
+          "label": "customer clicks the signed link",
+          "note": "Opens https://app.streamlinepro.com/reviews/{token} in the browser."
+        },
+        {
+          "from": "web",
+          "to": "api",
+          "kind": "http",
+          "label": "GET /api/v1/public/reviews/{token}",
+          "note": "Throttled 60/min per IP. Returns booking summary + form config."
+        },
+        {
+          "from": "web",
+          "to": "api",
+          "kind": "http",
+          "label": "POST /api/v1/public/reviews/{token}",
+          "payload": { "nps": "0..10", "comment": "string", "tags": "string[]" }
+        },
+        {
+          "from": "api",
+          "to": "db",
+          "kind": "db",
+          "label": "INSERT booking_reviews"
+        }
+      ]
+    },
+    {
+      "id": "eas-build",
+      "name": "Native build — eas build",
+      "description": "Developer ships a new mobile binary to TestFlight + Play internal track.",
+      "tags": ["release", "mobile"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "eas",
+          "kind": "build",
+          "label": "eas build --profile production --platform all",
+          "note": "Triggered locally or from CI. Reads eas.json + app.json."
+        },
+        {
+          "from": "eas",
+          "to": "eas",
+          "kind": "build",
+          "label": "expo prebuild + native compile (iOS & Android)",
+          "note": "Runs on EAS-hosted macOS/Linux workers."
+        },
+        {
+          "from": "eas",
+          "to": "stores",
+          "kind": "rpc",
+          "label": "submit IPA to App Store Connect + AAB to Play Console",
+          "note": "eas submit, gated on a successful build."
+        },
+        {
+          "from": "stores",
+          "to": "app",
+          "kind": "manual",
+          "label": "TestFlight build available / Play internal release",
+          "note": "Testers + Сергей smoke-test before promoting to production."
+        }
+      ]
+    },
+    {
+      "id": "web-deploy",
+      "name": "Web build — expo export → CDN",
+      "description": "Same Expo codebase exported as a static web bundle, deployed behind nginx.",
+      "tags": ["release", "web"],
+      "steps": [
+        {
+          "from": "app",
+          "to": "app",
+          "kind": "build",
+          "label": "npm run build:web",
+          "note": "EXPO_UNSTABLE_TREE_SHAKING=true expo export -p web --output-dir dist"
+        },
+        {
+          "from": "app",
+          "to": "web",
+          "kind": "rpc",
+          "label": "rsync dist/ → /var/www/app (nginx)",
+          "note": "Deployed via deploy/install-stg-dev.sh; nginx serves the static bundle."
+        },
+        {
+          "from": "web",
+          "to": "api",
+          "kind": "http",
+          "label": "EXPO_PUBLIC_API_BASE_URL → /api/v1",
+          "note": "Web bundle calls the same API as native via CORS-allowed origin."
+        }
+      ]
+    }
+  ]
+}

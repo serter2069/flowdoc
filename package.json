@@ -1,0 +1,59 @@
+{
+  "name": "flowdoc",
+  "version": "0.1.0",
+  "description": "Document workflows between packages/components as a clickable, animated diagram driven by a JSON file. Works in any repo; optimized for React Native / Expo monorepos.",
+  "keywords": [
+    "flowdoc",
+    "documentation",
+    "architecture",
+    "diagram",
+    "react-flow",
+    "expo",
+    "react-native",
+    "monorepo",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "serter2069",
+  "homepage": "https://github.com/serter2069/flowdoc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/serter2069/flowdoc.git"
+  },
+  "bugs": "https://github.com/serter2069/flowdoc/issues",
+  "bin": {
+    "flowdoc": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:viewer": "node scripts/build-viewer.mjs",
+    "build:cli": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/cli.js --banner:js=\"#!/usr/bin/env node\"",
+    "build": "npm run build:viewer && npm run build:cli && chmod +x dist/cli.js",
+    "dev": "npm run build && node dist/cli.js build examples/pluto/flows.json -o examples/pluto/flowdoc.html",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.10.2",
+    "commander": "^14.0.3",
+    "dagre": "^0.8.5",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.54",
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}

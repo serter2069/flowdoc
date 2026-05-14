@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Smoke-build the Pluto example
+        run: |
+          node dist/cli.js build examples/pluto/flows.json -o /tmp/pluto.html
+          test -s /tmp/pluto.html
+          # ensure the JSON was inlined (no placeholder leftover)
+          ! grep -q "__FLOWDOC_DATA__" <(head -c 100000 /tmp/pluto.html)
+          # ensure each flow name made it through
+          grep -q "Invite new user" /tmp/pluto.html
+          grep -q "Stripe Connect" /tmp/pluto.html
+          grep -q "EAS Build" /tmp/pluto.html
