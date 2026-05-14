@@ -258,6 +258,13 @@ export function SitemapGraph({
       proOptions={{ hideAttribution: true }}
       minZoom={0.1}
       maxZoom={2}
+      panOnScroll
+      panOnScrollMode={"free" as never}
+      panOnScrollSpeed={0.6}
+      zoomOnScroll={false}
+      zoomOnPinch
+      zoomOnDoubleClick={false}
+      panOnDrag
     >
       <Background gap={24} size={1} color="#2a335a" />
       <Controls
