@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type RefObject } from "react";
 import type { Group, Role, Screen, ScreenKind } from "../../schema";
 
 interface Props {
@@ -6,12 +6,15 @@ interface Props {
   groups: Group[];
   screens: Screen[];
   filteredScreens: Screen[];
+  collapsedGroups: Set<string>;
   selectedId: string | null;
   roleFilter: string | null;
   kindFilter: string | null;
+  searchInputRef: RefObject<HTMLInputElement | null>;
   onSelectScreen: (id: string) => void;
   onRoleFilter: (id: string) => void;
   onKindFilter: (kind: string) => void;
+  onToggleGroup: (id: string) => void;
 }
 
 const KIND_LABEL: Record<ScreenKind, string> = {
@@ -41,12 +44,15 @@ export function SitemapSidebar({
   groups,
   screens,
   filteredScreens,
+  collapsedGroups,
   selectedId,
   roleFilter,
   kindFilter,
+  searchInputRef,
   onSelectScreen,
   onRoleFilter,
   onKindFilter,
+  onToggleGroup,
 }: Props) {
   const [query, setQuery] = useState("");
 
@@ -61,25 +67,46 @@ export function SitemapSidebar({
     );
   }, [filteredScreens, query]);
 
-  // Group screens by their `group` field, preserving group order; loose screens go in "Other"
+  // Build a per-group lookup of total screens (pre-filter) and visible screens (post-filter)
   const grouped = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const s of screens) {
+      const key = s.group ?? "_other";
+      totals.set(key, (totals.get(key) ?? 0) + 1);
+    }
     const byGroup = new Map<string, Screen[]>();
-    for (const g of groups) byGroup.set(g.id, []);
     for (const s of visible) {
       const key = s.group ?? "_other";
       if (!byGroup.has(key)) byGroup.set(key, []);
       byGroup.get(key)!.push(s);
     }
-    // Drop empty groups in display order
-    const out: { id: string; name: string; color?: string; items: Screen[] }[] = [];
+    const out: {
+      id: string;
+      name: string;
+      color?: string;
+      total: number;
+      items: Screen[];
+    }[] = [];
     for (const g of groups) {
       const items = byGroup.get(g.id) ?? [];
-      if (items.length) out.push({ id: g.id, name: g.name, color: g.color, items });
+      const total = totals.get(g.id) ?? 0;
+      // show group even if collapsed (so user can re-expand) or has items
+      if (total > 0) {
+        out.push({ id: g.id, name: g.name, color: g.color, total, items });
+      }
     }
-    const other = byGroup.get("_other") ?? [];
-    if (other.length) out.push({ id: "_other", name: "Other", items: other });
+    const otherTotal = totals.get("_other") ?? 0;
+    const otherItems = byGroup.get("_other") ?? [];
+    if (otherTotal > 0) {
+      out.push({
+        id: "_other",
+        name: "Other",
+        total: otherTotal,
+        items: otherItems,
+      });
+    }
     return out;
-  }, [groups, visible]);
+  }, [groups, visible, screens]);
 
   const presentKinds = useMemo<ScreenKind[]>(() => {
     const set = new Set<ScreenKind>();
@@ -147,42 +174,56 @@ export function SitemapSidebar({
       </div>
       <div className="search">
         <input
+          ref={searchInputRef}
           type="search"
-          placeholder="Search screens…"
+          placeholder="Search screens…  (press / to focus)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 
       <div className="grouped-list">
-        {grouped.map((g) => (
-          <div key={g.id} className="group-block">
-            <div
-              className="group-head"
-              style={{ ["--group-color" as string]: g.color ?? "var(--text-muted)" }}
-            >
-              {g.name}
-              <span className="muted-count">{g.items.length}</span>
+        {grouped.map((g) => {
+          const isCollapsed = collapsedGroups.has(g.id);
+          return (
+            <div key={g.id} className="group-block">
+              <button
+                type="button"
+                className={`group-head ${isCollapsed ? "is-collapsed" : ""}`}
+                style={{
+                  ["--group-color" as string]: g.color ?? "var(--text-muted)",
+                }}
+                onClick={() => onToggleGroup(g.id)}
+                title={isCollapsed ? "Expand group" : "Collapse group"}
+              >
+                <span className="chevron">{isCollapsed ? "▸" : "▾"}</span>
+                <span className="group-head-name">{g.name}</span>
+                <span className="muted-count">
+                  {isCollapsed ? g.total : `${g.items.length}/${g.total}`}
+                </span>
+              </button>
+              {!isCollapsed && g.items.length > 0 ? (
+                <ul className="screen-list">
+                  {g.items.map((s) => (
+                    <li
+                      key={s.id}
+                      className={s.id === selectedId ? "active" : ""}
+                      onClick={() => onSelectScreen(s.id)}
+                    >
+                      <span className="screen-row">
+                        <span className="kind-glyph" title={KIND_LABEL[s.kind]}>
+                          {KIND_ICON[s.kind]}
+                        </span>
+                        <span className="screen-row-name">{s.name}</span>
+                      </span>
+                      {s.path ? <span className="screen-row-path">{s.path}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
-            <ul className="screen-list">
-              {g.items.map((s) => (
-                <li
-                  key={s.id}
-                  className={s.id === selectedId ? "active" : ""}
-                  onClick={() => onSelectScreen(s.id)}
-                >
-                  <span className="screen-row">
-                    <span className="kind-glyph" title={KIND_LABEL[s.kind]}>
-                      {KIND_ICON[s.kind]}
-                    </span>
-                    <span className="screen-row-name">{s.name}</span>
-                  </span>
-                  {s.path ? <span className="screen-row-path">{s.path}</span> : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+          );
+        })}
         {grouped.length === 0 ? (
           <div className="empty-inline">No screens match.</div>
         ) : null}

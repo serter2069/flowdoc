@@ -7,3 +7,4 @@ dist/
 # Generated output anywhere else is ignored:
 flowdoc.html
 !examples/**/flowdoc.html
+.gstack/

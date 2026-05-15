@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useCallback } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
@@ -8,6 +9,7 @@ import {
   Position,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge as RFEdge,
   type NodeProps,
@@ -18,6 +20,9 @@ import type { Edge, Group, Role, Screen, ScreenKind } from "../../schema";
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 78;
+const GROUP_PAD_X = 24;
+const GROUP_PAD_Y = 36; // extra room for the group label at the top
+const GROUP_PAD_BOTTOM = 16;
 
 const KIND_ICON: Record<ScreenKind, string> = {
   tab: "🗂",
@@ -47,6 +52,11 @@ type ScreenNodeData = {
   selected: boolean;
   dimmed: boolean;
   highlight: "outgoing" | "incoming" | null;
+};
+
+type GroupNodeData = {
+  group: Group;
+  count: number;
 };
 
 function ScreenNode({ data }: NodeProps<Node<ScreenNodeData>>) {
@@ -89,19 +99,45 @@ function ScreenNode({ data }: NodeProps<Node<ScreenNodeData>>) {
   );
 }
 
-const nodeTypes = { screen: ScreenNode };
+function GroupNode({ data }: NodeProps<Node<GroupNodeData>>) {
+  const { group, count } = data;
+  const color = group.color ?? "rgba(255,255,255,0.4)";
+  return (
+    <div
+      className="group-cluster"
+      style={{
+        borderColor: color,
+        background: `linear-gradient(180deg, ${color}18 0%, ${color}08 30%, transparent 100%)`,
+      }}
+    >
+      <div
+        className="group-cluster-label"
+        style={{
+          color: "#0b1020",
+          background: color,
+          borderColor: color,
+        }}
+      >
+        {group.name}
+        <span className="group-cluster-count">{count}</span>
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { screen: ScreenNode, group: GroupNode };
 
 function layoutGraph(
   screens: Screen[],
   edges: Edge[]
 ): Map<string, { x: number; y: number }> {
-  const g = new dagre.graphlib.Graph({ compound: true });
+  const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: "LR",
-    nodesep: 28,
-    ranksep: 90,
-    marginx: 40,
-    marginy: 40,
+    nodesep: 30,
+    ranksep: 120,
+    marginx: 60,
+    marginy: 60,
   });
   g.setDefaultEdgeLabel(() => ({}));
 
@@ -129,21 +165,66 @@ interface Props {
   groups: Group[];
   roles: Role[];
   visibleScreenIds: Set<string>;
+  collapsedGroups: Set<string>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onFocusSearch: () => void;
+  onClearSelection: () => void;
 }
 
-export function SitemapGraph({
+function GraphInner({
   screens,
   edges,
   groups,
   visibleScreenIds,
+  collapsedGroups,
   selectedId,
   onSelect,
+  onFocusSearch,
+  onClearSelection,
 }: Props) {
   const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
 
+  // Layout uses ALL screens so the absolute positions stay consistent across
+  // role/kind filters or group collapse — only visibility flips.
   const positions = useMemo(() => layoutGraph(screens, edges), [screens, edges]);
+
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of screens) {
+      if (s.group && groupsById.has(s.group)) {
+        counts.set(s.group, (counts.get(s.group) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [screens, groupsById]);
+
+  // For each group, compute the bounding box of all its screens (in absolute coords).
+  const groupBoxes = useMemo(() => {
+    const acc = new Map<
+      string,
+      { minX: number; minY: number; maxX: number; maxY: number }
+    >();
+    for (const s of screens) {
+      if (!s.group || !groupsById.has(s.group)) continue;
+      const pos = positions.get(s.id);
+      if (!pos) continue;
+      const cur = acc.get(s.group);
+      const x1 = pos.x;
+      const y1 = pos.y;
+      const x2 = pos.x + NODE_WIDTH;
+      const y2 = pos.y + NODE_HEIGHT;
+      if (!cur) {
+        acc.set(s.group, { minX: x1, minY: y1, maxX: x2, maxY: y2 });
+      } else {
+        cur.minX = Math.min(cur.minX, x1);
+        cur.minY = Math.min(cur.minY, y1);
+        cur.maxX = Math.max(cur.maxX, x2);
+        cur.maxY = Math.max(cur.maxY, y2);
+      }
+    }
+    return acc;
+  }, [screens, positions, groupsById]);
 
   const outgoingFromSelected = useMemo<Set<string>>(() => {
     if (!selectedId) return new Set();
@@ -155,8 +236,38 @@ export function SitemapGraph({
     return new Set(edges.filter((e) => e.to === selectedId).map((e) => e.from));
   }, [selectedId, edges]);
 
-  const initialNodes = useMemo<Node<ScreenNodeData>[]>(() => {
-    return screens.map((screen) => {
+  const initialNodes = useMemo<Node[]>(() => {
+    const out: Node[] = [];
+
+    // 1. Group cluster nodes (drawn first so they're behind screens)
+    for (const g of groups) {
+      const box = groupBoxes.get(g.id);
+      if (!box) continue;
+      const collapsed = collapsedGroups.has(g.id);
+      const width = box.maxX - box.minX + GROUP_PAD_X * 2;
+      const height = box.maxY - box.minY + GROUP_PAD_Y + GROUP_PAD_BOTTOM;
+      out.push({
+        id: `__group__${g.id}`,
+        type: "group",
+        position: { x: box.minX - GROUP_PAD_X, y: box.minY - GROUP_PAD_Y },
+        data: { group: g, count: groupCounts.get(g.id) ?? 0 },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: -10,
+        hidden: collapsed,
+        style: {
+          width,
+          height,
+          background: "transparent",
+          border: "none",
+          padding: 0,
+        },
+      });
+    }
+
+    // 2. Screen nodes
+    for (const screen of screens) {
       const pos = positions.get(screen.id) ?? { x: 0, y: 0 };
       const group = screen.group ? groupsById.get(screen.group) ?? null : null;
       const visible = visibleScreenIds.has(screen.id);
@@ -168,33 +279,37 @@ export function SitemapGraph({
           : null;
       const dimmed =
         !visible ||
-        (selectedId !== null &&
-          !isSelected &&
-          highlight === null);
-      return {
+        (selectedId !== null && !isSelected && highlight === null);
+      out.push({
         id: screen.id,
         type: "screen",
         position: pos,
         data: { screen, group, selected: isSelected, dimmed, highlight },
         draggable: true,
-      };
-    });
+        zIndex: 1,
+        hidden: !visible,
+      });
+    }
+    return out;
   }, [
     screens,
+    groups,
     positions,
     groupsById,
     visibleScreenIds,
+    collapsedGroups,
     selectedId,
     outgoingFromSelected,
     incomingToSelected,
+    groupBoxes,
+    groupCounts,
   ]);
 
   const initialEdges = useMemo<RFEdge[]>(() => {
     return edges.map((e, i) => {
       const isFromSelected = selectedId !== null && e.from === selectedId;
       const isToSelected = selectedId !== null && e.to === selectedId;
-      const isFaded =
-        selectedId !== null && !isFromSelected && !isToSelected;
+      const isFaded = selectedId !== null && !isFromSelected && !isToSelected;
       const source = screens.find((s) => s.id === e.from);
       const color =
         isFromSelected || isToSelected
@@ -202,6 +317,8 @@ export function SitemapGraph({
             ? groupsById.get(source.group)?.color ?? "#7aa2ff"
             : "#7aa2ff"
           : "#2a335a";
+      const eitherEndHidden =
+        !visibleScreenIds.has(e.from) || !visibleScreenIds.has(e.to);
       return {
         id: `${e.from}->${e.to}-${i}`,
         source: e.from,
@@ -224,9 +341,10 @@ export function SitemapGraph({
           strokeWidth: isFromSelected || isToSelected ? 2 : 1,
           opacity: isFaded ? 0.18 : 1,
         },
+        hidden: eitherEndHidden,
       };
     });
-  }, [edges, selectedId, screens, groupsById]);
+  }, [edges, selectedId, screens, groupsById, visibleScreenIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -240,10 +358,100 @@ export function SitemapGraph({
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, n: Node) => {
+      if (n.type === "group") return;
       onSelect(n.id);
     },
     [onSelect]
   );
+
+  const rf = useReactFlow();
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      // / focuses the search even if you're not in an input — but if you ARE in
+      // an input, "/" should type as normal.
+      if (e.key === "/" && !isTypingTarget(e.target)) {
+        e.preventDefault();
+        onFocusSearch();
+        return;
+      }
+      // The remaining shortcuts are inert while typing.
+      if (isTypingTarget(e.target)) {
+        if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+        return;
+      }
+      switch (e.key) {
+        case "f":
+        case "F":
+          e.preventDefault();
+          rf.fitView({ padding: 0.12, duration: 280 });
+          break;
+        case "c":
+        case "C":
+        case "Escape":
+          onClearSelection();
+          break;
+        case "+":
+        case "=":
+          rf.zoomIn({ duration: 200 });
+          break;
+        case "-":
+        case "_":
+          rf.zoomOut({ duration: 200 });
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          rf.setViewport(
+            (() => {
+              const v = rf.getViewport();
+              return { ...v, y: v.y + 80 };
+            })(),
+            { duration: 120 }
+          );
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          rf.setViewport(
+            (() => {
+              const v = rf.getViewport();
+              return { ...v, y: v.y - 80 };
+            })(),
+            { duration: 120 }
+          );
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          rf.setViewport(
+            (() => {
+              const v = rf.getViewport();
+              return { ...v, x: v.x + 80 };
+            })(),
+            { duration: 120 }
+          );
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          rf.setViewport(
+            (() => {
+              const v = rf.getViewport();
+              return { ...v, x: v.x - 80 };
+            })(),
+            { duration: 120 }
+          );
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [rf, onFocusSearch, onClearSelection]);
 
   return (
     <ReactFlow
@@ -280,6 +488,10 @@ export function SitemapGraph({
         zoomable
         nodeStrokeColor="#2a335a"
         nodeColor={(node) => {
+          if (node.type === "group") {
+            const data = (node.data as GroupNodeData) ?? null;
+            return data?.group.color ?? "#1f2748";
+          }
           const data = (node.data as ScreenNodeData) ?? null;
           if (!data) return "#1f2748";
           if (data.group?.color) return data.group.color;
@@ -292,5 +504,13 @@ export function SitemapGraph({
         }}
       />
     </ReactFlow>
+  );
+}
+
+export function SitemapGraph(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <GraphInner {...props} />
+    </ReactFlowProvider>
   );
 }
