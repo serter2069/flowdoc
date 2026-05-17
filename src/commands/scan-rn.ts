@@ -39,8 +39,12 @@ function inferRoleFromName(name: string): string[] {
   const base = name.replace(/Screen$/, "");
   const n = base.toLowerCase();
 
-  // Anonymous (no auth needed) — must precede other checks
-  if (/^login|^signin|^signup|^register|^forgot|^reset|^password$|^publicbooking|^publicconsult|^public[a-z]/.test(n)) return ["anon"];
+  // Client = customer-facing public booking funnel (their first real touchpoint
+  // before any auth). Distinct from "anon" which is auth-related (login/reset).
+  if (/^public(booking|consult)|^booking(funnel|landing|wizard|confirm)|^thanks?$|^thank/.test(n)) return ["client"];
+
+  // Anonymous (auth-flow only) — must precede other checks
+  if (/^login|^signin|^signup|^register|^forgot|^reset|^password$|^public[a-z]/.test(n)) return ["anon"];
 
   // Worker-centric screens (own schedule, own earnings, own appointments)
   if (/^worker|^myapp|^myjob|^myschedule|^useravailab|earnings$|payoutslip/.test(n)) return ["worker"];

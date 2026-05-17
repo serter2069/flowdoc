@@ -55,6 +55,34 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
     transitionsByPair.add(`${root.num}→${login.num}`);
   }
 
+  // 1b. Client funnel: connect customer-facing screens into a lifecycle so a
+  //     scenario reads as: Anonymous root → /booking → /property-lookup → submit
+  //     → BookingCreatedNotification (push to manager) → manager picks it up.
+  const clientHome = states.find((s) =>
+    (s.roles ?? []).includes("client") && /publicbooking|^\/?booking($|\/)|booking funnel/i.test(s.title + " " + (s.path ?? ""))
+  );
+  if (clientHome && root && !transitionsByPair.has(`${root.num}→${clientHome.num}`)) {
+    synthetic.push({ from: root.num, to: clientHome.num, label: "client lands → start booking", cond: "client" });
+    transitionsByPair.add(`${root.num}→${clientHome.num}`);
+  }
+  // Customer submit → BookingCreatedNotification (push to ops/manager)
+  const bookingNotif = states.find((s) =>
+    s.kind === "push" && /bookingcreated|bookingsubmit/i.test(s.title)
+  );
+  if (clientHome && bookingNotif) {
+    const pair = `${clientHome.num}→${bookingNotif.num}`;
+    if (!transitionsByPair.has(pair)) {
+      synthetic.push({ from: clientHome.num, to: bookingNotif.num, label: "submit booking → notify ops", cond: "POST /api/bookings" });
+      transitionsByPair.add(pair);
+    }
+    // Notification → manager Dashboard (the manager picks up the new booking)
+    const mgrHome = states.find((s) => (s.roles ?? []).includes("manager") && /dashboard|bookings/i.test(s.title));
+    if (mgrHome && !transitionsByPair.has(`${bookingNotif.num}→${mgrHome.num}`)) {
+      synthetic.push({ from: bookingNotif.num, to: mgrHome.num, label: "manager sees new booking", cond: "push delivered" });
+      transitionsByPair.add(`${bookingNotif.num}→${mgrHome.num}`);
+    }
+  }
+
   // 2. Login → role home (one synthetic edge per authenticated role)
   const HOME_HINTS: Record<string, RegExp> = {
     worker: /myappoint|^my schedule|dashboard|earnings/i,

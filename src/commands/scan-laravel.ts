@@ -7,8 +7,12 @@ interface ScanLaravelOpts {
   merge: boolean;
 }
 
-const PUBLIC_HINT = /(home|landing|login|register|forgot|reset|booking|thank|cancel|success|public|out-of-service|signup|signin)/i;
+const PUBLIC_HINT = /(home|landing|login|register|forgot|reset|booking|thank|cancel|success|public|out-of-service|signup|signin|property-lookup|zip)/i;
 const AUTH_HINT = /(login|signin|signup|register|forgot|reset|auth)/i;
+// Customer-facing routes: this is the FIRST page a real client lands on to
+// create a new booking. Tagged "client" so the scenario tree shows their flow
+// distinctly from anon-auth flows (login/reset).
+const CLIENT_HINT = /(\/booking|\/property-lookup|\/public\/zip|\/public\/property|\/thanks|\/thank-you|\/confirm-booking|\/payment\/(success|cancel)|out-of-service|public-booking|public-consultation|available-time-slots)/i;
 const ERROR_HINT = /(out-of-service|cancel|404|error)/i;
 const SUCCESS_HINT = /(thank|success|complete)/i;
 
@@ -180,7 +184,11 @@ export function scanLaravelCommand(rootArg: string | undefined, opts: ScanLarave
       id, kind,
       title: r.path,
       path: r.path,
-      roles: AUTH_HINT.test(r.path) || PUBLIC_HINT.test(r.path) ? ["anon"] : ["any"],
+      roles: CLIENT_HINT.test(r.path)
+        ? ["client"]
+        : AUTH_HINT.test(r.path) || PUBLIC_HINT.test(r.path)
+          ? ["anon"]
+          : ["any"],
       col, row: row++,
     });
     if (row >= 12) { row = 0; col++; }
@@ -238,7 +246,7 @@ export function scanLaravelCommand(rootArg: string | undefined, opts: ScanLarave
   for (const s of states) {
     if (s.num === anonNum) continue;
     if (!s.path) continue;
-    if (s.roles?.includes("anon") || PUBLIC_HINT.test(s.path)) {
+    if (s.roles?.includes("anon") || s.roles?.includes("client") || PUBLIC_HINT.test(s.path)) {
       transitions.push({ from: anonNum, to: s.num, label: `navigate to ${s.path}` });
     }
   }
@@ -249,6 +257,7 @@ export function scanLaravelCommand(rootArg: string | undefined, opts: ScanLarave
     subtitle: `${states.length} states · ${transitions.length} transitions · auto-extracted ${new Date().toISOString().slice(0,10)}`,
     roles: [
       { id: "anon", name: "Anonymous", color: "#64748b" },
+      { id: "client", name: "Customer", color: "#c026d3" },
       { id: "any", name: "Any role", color: "#64748b" },
     ],
     states, transitions, scenarios: [],
