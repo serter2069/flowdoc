@@ -1,0 +1,743 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FlowDoc, State, StateKind } from "../../schema";
+import type { RunsData, RunStatus } from "../runs";
+import { ScenariosSidebar } from "./ScenariosList";
+
+const KIND_GLYPH: Record<StateKind, string> = {
+  page: "P", state: "·", modal: "M", error: "!", success: "✓",
+  effect: "⚡", email: "✉", push: "📱", api: "⇄", db: "▤", webhook: "🌐", condition: "?",
+};
+
+const COL_W = 340, ROW_H = 180, PAD_X = 40, PAD_Y = 60, CARD_W = 220, CARD_H = 110;
+const ROLE_HEX: Record<string, string> = {
+  anon: "#64748b", client: "#c026d3", worker: "#ea580c",
+  dispatcher: "#16a34a", manager: "#2563eb", admin: "#9333ea", any: "#94a3b8",
+};
+const ALL_PLATFORMS = ["web-desktop", "web-mobile", "ios", "android"] as const;
+type Platform = typeof ALL_PLATFORMS[number];
+const PLAT_SHORT: Record<Platform, string> = { "web-desktop": "Desktop", "web-mobile": "Mobile", ios: "iOS", android: "Android" };
+void PLAT_SHORT;
+
+interface StateCanvasProps {
+  doc: FlowDoc;
+  runs: RunsData;
+  onPositionsChange?: (positions: Record<number, { x: number; y: number }>) => void;
+}
+
+function statusForState(stateNum: number, doc: FlowDoc, runs: RunsData): Record<Platform, RunStatus> {
+  const stateMeta = doc.states?.find((s) => s.num === stateNum);
+  const fallback: Record<Platform, RunStatus> = { "web-desktop": "untested", "web-mobile": "untested", ios: "untested", android: "untested" };
+  if (!stateMeta) return fallback;
+  // Coverage = if any scenario containing this state has a recorded run, take that status.
+  const scenariosTouchingState = (doc.scenarios ?? []).filter((sc) => sc.path.includes(stateNum));
+  if (!scenariosTouchingState.length) return fallback;
+  for (const p of ALL_PLATFORMS) {
+    let worst: RunStatus = "untested";
+    for (const sc of scenariosTouchingState) {
+      const r = runs.byScreen?.[sc.id]?.[p];
+      if (!r) continue;
+      if (r.status === "fail") { worst = "fail" as RunStatus; break; }
+      if (r.status === "pass") worst = "pass";
+    }
+    fallback[p] = worst;
+  }
+  return fallback;
+}
+
+function cardClass(kind: StateKind): string {
+  return `flowdoc-card flowdoc-card-${kind}`;
+}
+
+function platDotClass(s: RunStatus): string {
+  return `flowdoc-plat flowdoc-plat-${s}`;
+}
+
+function defaultPositionFor(s: State): { x: number; y: number } {
+  if (s.position) return s.position;
+  const col = s.col ?? 0, row = s.row ?? 0;
+  return { x: PAD_X + col * COL_W, y: PAD_Y + row * ROW_H };
+}
+
+function bezierPath(from: { x: number; y: number; w: number; h: number }, to: { x: number; y: number; w: number; h: number }) {
+  let x1, y1, x2, y2;
+  if (to.x > from.x + from.w / 2) { x1 = from.x + from.w; y1 = from.y + from.h / 2; x2 = to.x; y2 = to.y + to.h / 2; }
+  else if (to.x < from.x - from.w / 2) { x1 = from.x; y1 = from.y + from.h / 2; x2 = to.x + to.w; y2 = to.y + to.h / 2; }
+  else if (to.y > from.y) { x1 = from.x + from.w / 2; y1 = from.y + from.h; x2 = to.x + to.w / 2; y2 = to.y; }
+  else { x1 = from.x + from.w / 2; y1 = from.y; x2 = to.x + to.w / 2; y2 = to.y + to.h; }
+  const dx = x2 - x1;
+  const sign = dx >= 0 ? 1 : -1;
+  const c1x = x1 + sign * 40, c1y = y1;
+  const c2x = x2 - sign * 40, c2y = y2;
+  return { d: `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`, mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+}
+
+export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) {
+  const states = doc.states ?? [];
+  const transitions = doc.transitions ?? [];
+  const scenarios = doc.scenarios ?? [];
+  const stateByNum = useMemo(() => Object.fromEntries(states.map((s) => [s.num, s])), [states]);
+
+  const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>(() => {
+    const init: Record<number, { x: number; y: number }> = {};
+    for (const s of states) init[s.num] = defaultPositionFor(s);
+    return init;
+  });
+  const [selectedNums, setSelectedNums] = useState<Set<number>>(new Set());
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const marqueeRef = useRef<{ startWX: number; startWY: number; additive: boolean } | null>(null);
+  const [activeScenarioIds, setActiveScenarioIds] = useState<Set<string>>(new Set());
+  const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
+  const [query, setQuery] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Single-active id derived from set (for legacy single-scenario UI like the sequence bar)
+  const activeScenarioId = activeScenarioIds.size === 1 ? [...activeScenarioIds][0] : "";
+
+  function toggleScenario(id: string, additive: boolean) {
+    setActiveScenarioIds((prev) => {
+      if (id === "") return new Set();
+      if (!additive) {
+        if (prev.size === 1 && prev.has(id)) return new Set();
+        return new Set([id]);
+      }
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setOverlayRole(null);
+  }
+
+  // Drag state
+  // dragRef.origPositions = snapshot of every selected card's start position
+  // so we can move the whole group by the same delta.
+  const dragRef = useRef<{
+    leadNum: number;
+    startX: number;
+    startY: number;
+    origPositions: Map<number, { x: number; y: number }>;
+    moved: boolean;
+  } | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Zoom: plain wheel = zoom (Figma/Miro style — canvas-first UX). Shift+wheel = pan.
+  // Trackpad pinch fires wheel with ctrlKey on Chrome/Safari — also handled as zoom.
+  // Two-finger trackpad scroll fires wheel with both deltaX and deltaY → treated as pan.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!el) return;
+      const isPinch = e.ctrlKey || e.metaKey;
+      const isPanGesture = e.shiftKey || (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.3 && !isPinch);
+      if (isPanGesture) {
+        // Let browser handle two-finger pan / shift-scroll → native scroll
+        return;
+      }
+      // Plain wheel OR pinch → zoom around cursor
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const worldX = (el.scrollLeft + cx) / zoom;
+      const worldY = (el.scrollTop + cy) / zoom;
+      const factor = Math.exp(-e.deltaY * 0.0025);
+      const newZoom = Math.min(3, Math.max(0.1, zoom * factor));
+      setZoom(newZoom);
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.scrollLeft = worldX * newZoom - cx;
+        el.scrollTop = worldY * newZoom - cy;
+      });
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoom]);
+
+  // Keyboard zoom: +/-, 0 = reset. Space-held = pan mode.
+  const spaceDown = useRef(false);
+  const panRef = useRef<{ startX: number; startY: number; origScrollX: number; origScrollY: number } | null>(null);
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const inField = target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA");
+      if (!inField && e.code === "Space") {
+        e.preventDefault();
+        spaceDown.current = true;
+        if (scrollRef.current) scrollRef.current.style.cursor = "grab";
+      }
+      if (inField) return;
+      if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom((z) => Math.min(3, z * 1.25)); }
+      else if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom((z) => Math.max(0.1, z / 1.25)); }
+      else if (e.key === "0") { e.preventDefault(); setZoom(1); }
+      else if (e.key === "f") { e.preventDefault(); fitToView(); }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        spaceDown.current = false;
+        if (scrollRef.current) scrollRef.current.style.cursor = "";
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mouse drag-to-pan when space is held OR middle mouse button
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onMouseDown(e: MouseEvent) {
+      if (!el) return;
+      const isMiddle = e.button === 1;
+      if (!spaceDown.current && !isMiddle) return;
+      e.preventDefault();
+      panRef.current = {
+        startX: e.clientX, startY: e.clientY,
+        origScrollX: el.scrollLeft, origScrollY: el.scrollTop,
+      };
+      el.style.cursor = "grabbing";
+    }
+    function onMouseMove(e: MouseEvent) {
+      if (!el || !panRef.current) return;
+      const dx = e.clientX - panRef.current.startX;
+      const dy = e.clientY - panRef.current.startY;
+      el.scrollLeft = panRef.current.origScrollX - dx;
+      el.scrollTop = panRef.current.origScrollY - dy;
+    }
+    function onMouseUp() {
+      if (!el) return;
+      panRef.current = null;
+      el.style.cursor = spaceDown.current ? "grab" : "";
+    }
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  // Auto-fit on first mount so 100+ states render visible instead of just the top-left card
+  const didInitialFit = useRef(false);
+  useEffect(() => {
+    if (didInitialFit.current) return;
+    if (states.length === 0) return;
+    const t = setTimeout(() => {
+      fitToView();
+      didInitialFit.current = true;
+    }, 100);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [states.length]);
+
+  function fitToView() {
+    const el = scrollRef.current;
+    if (!el || states.length === 0) return;
+    let maxX = 0, maxY = 0, minX = Infinity, minY = Infinity;
+    for (const s of states) {
+      const p = positions[s.num] ?? defaultPositionFor(s);
+      maxX = Math.max(maxX, p.x + CARD_W);
+      maxY = Math.max(maxY, p.y + CARD_H);
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+    }
+    if (!isFinite(minX)) return;
+    const graphW = maxX - minX, graphH = maxY - minY;
+    const fitW = (el.clientWidth - 60) / graphW;
+    const fitH = (el.clientHeight - 60) / graphH;
+    const z = Math.min(1.0, Math.max(0.2, Math.min(fitW, fitH)));
+    setZoom(z);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      // Center the graph inside the viewport
+      const centerX = (minX + graphW / 2) * z;
+      const centerY = (minY + graphH / 2) * z;
+      el.scrollLeft = centerX - el.clientWidth / 2;
+      el.scrollTop = centerY - el.clientHeight / 2;
+    });
+  }
+
+  useEffect(() => {
+    function move(e: MouseEvent) {
+      // 1. Card-group drag
+      if (dragRef.current) {
+        const d = dragRef.current;
+        const dx = (e.clientX - d.startX) / zoom;
+        const dy = (e.clientY - d.startY) / zoom;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
+        if (d.moved) {
+          setPositions((p) => {
+            const next = { ...p };
+            for (const [num, orig] of d.origPositions) {
+              next[num] = { x: orig.x + dx, y: orig.y + dy };
+            }
+            return next;
+          });
+        }
+        return;
+      }
+      // 2. Rubber-band marquee
+      if (marqueeRef.current) {
+        const el = scrollRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const wx = (el.scrollLeft + e.clientX - rect.left) / zoom;
+        const wy = (el.scrollTop + e.clientY - rect.top) / zoom;
+        const { startWX, startWY } = marqueeRef.current;
+        setMarquee({
+          x: Math.min(startWX, wx),
+          y: Math.min(startWY, wy),
+          w: Math.abs(wx - startWX),
+          h: Math.abs(wy - startWY),
+        });
+      }
+    }
+    function up(e: MouseEvent) {
+      if (dragRef.current) {
+        const d = dragRef.current;
+        if (!d.moved) {
+          // Click without drag = select
+          const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+          setSelectedNums((prev) => {
+            if (additive) {
+              const next = new Set(prev);
+              if (next.has(d.leadNum)) next.delete(d.leadNum);
+              else next.add(d.leadNum);
+              return next;
+            }
+            return new Set([d.leadNum]);
+          });
+          const hit = scenarios.find((sc) => sc.path.includes(d.leadNum));
+          if (hit && !additive) setActiveScenarioIds(new Set([hit.id]));
+        } else {
+          onPositionsChange?.(positions);
+        }
+        dragRef.current = null;
+        return;
+      }
+      // End marquee → compute selection
+      if (marqueeRef.current && marquee) {
+        const additive = marqueeRef.current.additive;
+        const hits = new Set<number>();
+        for (const s of states) {
+          const p = positions[s.num] ?? defaultPositionFor(s);
+          if (p.x + CARD_W >= marquee.x && p.x <= marquee.x + marquee.w &&
+              p.y + CARD_H >= marquee.y && p.y <= marquee.y + marquee.h) {
+            hits.add(s.num);
+          }
+        }
+        setSelectedNums((prev) => {
+          if (!additive) return hits;
+          const next = new Set(prev);
+          for (const n of hits) next.add(n);
+          return next;
+        });
+        marqueeRef.current = null;
+        setMarquee(null);
+      }
+    }
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+    return () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+  }, [scenarios, positions, onPositionsChange, zoom, marquee, states]);
+
+  function startDrag(num: number, e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    if (spaceDown.current) return;        // space-pan takes precedence
+    e.preventDefault();
+    e.stopPropagation();
+    // If the clicked card is already in the selection, drag the WHOLE selection.
+    // Otherwise, select just this card (additive if shift/meta held) and drag it.
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    let groupNums: Set<number>;
+    if (selectedNums.has(num)) {
+      groupNums = selectedNums;
+    } else if (additive) {
+      groupNums = new Set([...selectedNums, num]);
+      setSelectedNums(groupNums);
+    } else {
+      groupNums = new Set([num]);
+      setSelectedNums(groupNums);
+    }
+    const origPositions = new Map<number, { x: number; y: number }>();
+    for (const n of groupNums) {
+      const p = positions[n] ?? defaultPositionFor(states.find((s) => s.num === n)!);
+      origPositions.set(n, { x: p.x, y: p.y });
+    }
+    dragRef.current = { leadNum: num, startX: e.clientX, startY: e.clientY, origPositions, moved: false };
+  }
+
+  function startMarquee(e: React.MouseEvent) {
+    // Only trigger on canvas background (not on a card) with plain click (not space-pan, not middle-click)
+    if (e.button !== 0) return;
+    if (spaceDown.current) return;
+    if ((e.target as HTMLElement).closest(".flowdoc-card")) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const wx = (el.scrollLeft + e.clientX - rect.left) / zoom;
+    const wy = (el.scrollTop + e.clientY - rect.top) / zoom;
+    marqueeRef.current = { startWX: wx, startWY: wy, additive: e.shiftKey || e.metaKey || e.ctrlKey };
+    setMarquee({ x: wx, y: wy, w: 0, h: 0 });
+    if (!(e.shiftKey || e.metaKey || e.ctrlKey)) setSelectedNums(new Set());
+  }
+
+  // Union of states/edges across ALL active scenarios. Each scenario also gets a
+  // distinct palette color so multi-selecting "BookingDetail" and "WorkerPayouts"
+  // shows two coloured paths on the canvas at once.
+  const MULTI_PALETTE = ["#2563eb", "#ea580c", "#16a34a", "#dc2626", "#9333ea", "#0891b2", "#ca8a04", "#db2777"];
+  const activeScenariosList = useMemo(() => scenarios.filter((s) => activeScenarioIds.has(s.id)), [scenarios, activeScenarioIds]);
+  const scenarioColor = useMemo(() => {
+    const m = new Map<string, string>();
+    activeScenariosList.forEach((s, i) => m.set(s.id, MULTI_PALETTE[i % MULTI_PALETTE.length]));
+    return m;
+  }, [activeScenariosList]);
+  const cardsInScenario = useMemo(() => {
+    const s = new Set<number>();
+    for (const sc of activeScenariosList) for (const n of sc.path) s.add(n);
+    return s;
+  }, [activeScenariosList]);
+  const edgesInScenario = useMemo(() => {
+    const s = new Set<string>();
+    for (const sc of activeScenariosList) for (let i = 0; i < sc.path.length - 1; i++) s.add(`${sc.path[i]}→${sc.path[i + 1]}`);
+    return s;
+  }, [activeScenariosList]);
+  // Per-edge color when multiple scenarios are active: edge picks the color of
+  // the FIRST scenario in the active list that contains it (good enough for
+  // visual distinction; conflicting edges still render).
+  const edgeColor = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sc of activeScenariosList) {
+      const col = scenarioColor.get(sc.id) ?? "#2563eb";
+      for (let i = 0; i < sc.path.length - 1; i++) {
+        const k = `${sc.path[i]}→${sc.path[i + 1]}`;
+        if (!m.has(k)) m.set(k, col);
+      }
+    }
+    return m;
+  }, [activeScenariosList, scenarioColor]);
+
+  function visible(s: State): boolean {
+    if (query) {
+      const hay = `${s.title} ${s.path ?? ""} ${(s.roles ?? []).join(" ")} ${s.kind} #${s.num}`.toLowerCase();
+      if (!hay.includes(query.toLowerCase())) return false;
+    }
+    if (filterMode === "all") return true;
+    const plats = statusForState(s.num, doc, runs);
+    const vals = Object.values(plats);
+    if (filterMode === "untested") return vals.every((v) => v === "untested");
+    if (filterMode === "fail") return vals.some((v) => v === "fail");
+    if (filterMode === "pass") return vals.some((v) => v === "pass");
+    return true;
+  }
+
+  // Canvas is intentionally 3× the graph's bounding box on every side so users
+  // can pan into empty space freely (Miro/Figma feel). With a minimum of 6000×4000
+  // the inner surface holds the entire graph centered plus huge breathing room.
+  const canvasSize = useMemo(() => {
+    let maxX = 1200, maxY = 700, minX = Infinity, minY = Infinity;
+    for (const s of states) {
+      const p = positions[s.num] ?? defaultPositionFor(s);
+      maxX = Math.max(maxX, p.x + CARD_W);
+      maxY = Math.max(maxY, p.y + CARD_H);
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+    }
+    if (!isFinite(minX)) { minX = 0; minY = 0; }
+    const graphW = maxX - minX, graphH = maxY - minY;
+    const width = Math.max(6000, maxX + graphW * 2);
+    const height = Math.max(4000, maxY + graphH * 2);
+    return { width, height };
+  }, [states, positions]);
+
+  const activeScenario = scenarios.find((s) => s.id === activeScenarioId);
+
+  // Role-overlay: when a role is picked from the role-pill row, every scenario
+  // with that role contributes its path edges to a coloured overlay so the user
+  // sees ALL paths that role can take through the app at once.
+  const [overlayRole, setOverlayRole] = useState<string | null>(null);
+  const roleScenarios = useMemo(() => {
+    if (!overlayRole) return [];
+    return scenarios.filter((s) => (s.role ?? "any") === overlayRole);
+  }, [overlayRole, scenarios]);
+  const roleScenarioEdges = useMemo(() => {
+    const set = new Set<string>();
+    for (const sc of roleScenarios) {
+      for (let i = 0; i < sc.path.length - 1; i++) {
+        set.add(`${sc.path[i]}→${sc.path[i + 1]}`);
+      }
+    }
+    return set;
+  }, [roleScenarios]);
+  const roleScenarioStates = useMemo(() => {
+    const set = new Set<number>();
+    for (const sc of roleScenarios) for (const n of sc.path) set.add(n);
+    return set;
+  }, [roleScenarios]);
+
+  return (
+    <div className={`flowdoc-canvas-root ${sidebarOpen ? "with-sidebar" : ""}`}>
+      <div className="flowdoc-canvas-toolbar">
+        <button
+          type="button"
+          className="flowdoc-sidebar-toggle"
+          onClick={() => setSidebarOpen((v) => !v)}
+          title={sidebarOpen ? "Hide scenarios sidebar" : "Show scenarios sidebar"}
+        >
+          {sidebarOpen ? "⟨" : "⟩"} {scenarios.length}
+        </button>
+        <input
+          className="flowdoc-search"
+          placeholder="Filter (state, path, role, #num)…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {(["all", "untested", "fail", "pass"] as const).map((f) => (
+          <button key={f} type="button" className={`flowdoc-chip ${filterMode === f ? "on" : ""}`} onClick={() => setFilterMode(f)}>{f}</button>
+        ))}
+        <div className="flowdoc-spacer" />
+        {selectedNums.size > 0 && (
+          <span className="flowdoc-multi-info">
+            {selectedNums.size} card{selectedNums.size > 1 ? "s" : ""} selected ·{" "}
+            <button type="button" className="flowdoc-chip" onClick={() => setSelectedNums(new Set())}>deselect</button>
+          </span>
+        )}
+        {activeScenarioIds.size > 0 && (
+          <span className="flowdoc-multi-info" title={[...activeScenarioIds].join(", ")}>
+            {activeScenarioIds.size} scenario{activeScenarioIds.size > 1 ? "s" : ""} ·{" "}
+            <button type="button" className="flowdoc-chip" onClick={() => setActiveScenarioIds(new Set())}>clear</button>
+          </span>
+        )}
+        {overlayRole && (
+          <span className="flowdoc-multi-info">
+            role overlay: <b style={{ color: ROLE_HEX[overlayRole] ?? "#475569" }}>{overlayRole}</b> ·{" "}
+            <button type="button" className="flowdoc-chip" onClick={() => setOverlayRole(null)}>clear</button>
+          </span>
+        )}
+        <div className="flowdoc-zoom-controls">
+          <button type="button" onClick={() => setZoom((z) => Math.max(0.15, z / 1.25))} title="Zoom out (Cmd/Ctrl/Shift + scroll · pinch · keyboard −)">−</button>
+          <span className="flowdoc-zoom-pct" title="Current zoom">{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom((z) => Math.min(3, z * 1.25))} title="Zoom in (Cmd/Ctrl/Shift + scroll · pinch · keyboard +)">+</button>
+          <button type="button" onClick={() => setZoom(1)} title="Reset zoom to 100%">1:1</button>
+          <button type="button" onClick={fitToView} title="Fit all cards to viewport">Fit</button>
+        </div>
+        <button
+          type="button"
+          className="flowdoc-reset"
+          title="Snap all cards back to the BFS tree layout from flows.json"
+          onClick={() => {
+            const init: Record<number, { x: number; y: number }> = {};
+            for (const s of states) {
+              if (s.position) init[s.num] = { ...s.position };
+              else init[s.num] = defaultPositionFor(s);
+            }
+            setPositions(init);
+            onPositionsChange?.(init);
+            setSelectedNums(new Set());
+            setTimeout(() => fitToView(), 50);
+          }}
+        >↺ Reset layout</button>
+      </div>
+
+      <div className="flowdoc-canvas-body">
+        {sidebarOpen && (
+          <ScenariosSidebar
+            doc={doc}
+            runs={runs}
+            activeScenarioIds={activeScenarioIds}
+            overlayRole={overlayRole}
+            onSelect={toggleScenario}
+            onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); }}
+            scenarioColor={scenarioColor}
+          />
+        )}
+        <div className="flowdoc-canvas-scroll" ref={scrollRef}>
+        <div className="flowdoc-canvas" style={{
+          width: canvasSize.width * zoom,
+          height: canvasSize.height * zoom,
+        }}>
+        <div className="flowdoc-canvas-inner" style={{
+          width: canvasSize.width,
+          height: canvasSize.height,
+          transform: `scale(${zoom})`,
+          transformOrigin: "0 0",
+          position: "relative",
+        }} onMouseDown={startMarquee}>
+          <svg className="flowdoc-edges" width={canvasSize.width} height={canvasSize.height}>
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" /></marker>
+              <marker id="arr-blue" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" /></marker>
+              <marker id="arr-orange" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706" /></marker>
+              <marker id="arr-red" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626" /></marker>
+              <marker id="arr-overlay-anon" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" /></marker>
+              <marker id="arr-overlay-client" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#c026d3" /></marker>
+              <marker id="arr-overlay-worker" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ea580c" /></marker>
+              <marker id="arr-overlay-manager" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" /></marker>
+              <marker id="arr-overlay-admin" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9333ea" /></marker>
+            </defs>
+            {transitions.map((t, i) => {
+              const a = stateByNum[t.from], b = stateByNum[t.to];
+              if (!a || !b || !visible(a as State) || !visible(b as State)) return null;
+              const ap = { ...(positions[a.num] ?? defaultPositionFor(a as State)), w: CARD_W, h: CARD_H };
+              const bp = { ...(positions[b.num] ?? defaultPositionFor(b as State)), w: CARD_W, h: CARD_H };
+              const { d, mx, my } = bezierPath(ap, bp);
+              const edgeKey = `${t.from}→${t.to}`;
+              const inScen = edgesInScenario.has(edgeKey);
+              const multiColor = edgeColor.get(edgeKey);
+              const inOverlay = roleScenarioEdges.has(edgeKey);
+              const dimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
+              const cls = `${inScen ? "in-scenario" : t.fail ? "fail" : t.cond ? "cond" : ""} ${inOverlay ? `overlay-${overlayRole}` : ""} ${dimmed ? "dimmed" : ""}`.trim();
+              const marker = inOverlay ? `url(#arr-overlay-${overlayRole})` : inScen ? "url(#arr-blue)" : t.fail ? "url(#arr-red)" : t.cond ? "url(#arr-orange)" : "url(#arr)";
+              const label = (t.label || "") + (t.cond ? ` (${t.cond})` : "");
+              const shown = label.length > 40 ? label.slice(0, 38) + "…" : label;
+              const inlineStyle = multiColor ? { stroke: multiColor, strokeWidth: 2.5, opacity: 0.95 } : undefined;
+              return (
+                <g key={i} className={dimmed ? "edge-dimmed" : ""}>
+                  <path d={d} className={cls} markerEnd={marker} style={inlineStyle} />
+                  {label && !dimmed && <text x={mx} y={my - 4} textAnchor="middle" className={t.cond ? "cond" : ""}>{shown}</text>}
+                </g>
+              );
+            })}
+          </svg>
+
+          {states.filter(visible).map((s) => {
+            const p = positions[s.num] ?? defaultPositionFor(s);
+            const status = statusForState(s.num, doc, runs);
+            const sel = selectedNums.has(s.num);
+            const inScen = cardsInScenario.has(s.num);
+            const inOverlay = roleScenarioStates.has(s.num);
+            const cardDimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
+            return (
+              <div
+                key={s.num}
+                className={`${cardClass(s.kind)} ${sel ? "selected" : ""} ${inScen ? "in-scenario" : ""} ${inOverlay ? `overlay-on overlay-${overlayRole}` : ""} ${cardDimmed ? "card-dimmed" : ""}`}
+                style={{ left: p.x, top: p.y }}
+                onMouseDown={(e) => startDrag(s.num, e)}
+                title={s.desc || s.title}
+              >
+                <div className="flowdoc-card-rolebar" title={`Roles: ${(s.roles ?? ["any"]).join(", ")}`}>
+                  {(s.roles ?? ["any"]).map((r) => (
+                    <div key={r} className={`flowdoc-role-stripe flowdoc-role-stripe-${r}`}>
+                      <span className="flowdoc-role-stripe-text">{r}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flowdoc-card-body">
+                <div
+                  className="flowdoc-card-num"
+                  style={{
+                    // Counter-scale at low zoom so the state number stays readable
+                    // even when the rest of the card is shrunk to thumbnail size.
+                    transform: zoom < 1 ? `scale(${Math.min(2.5, 1 / zoom)})` : undefined,
+                    transformOrigin: "top right",
+                  }}
+                >#{s.num}</div>
+                <div className="flowdoc-card-kind">{s.kind.toUpperCase()} <span className="flowdoc-card-glyph">{KIND_GLYPH[s.kind]}</span></div>
+                <div className="flowdoc-card-title">{s.title}</div>
+                {s.path && <div className="flowdoc-card-path">{s.path}</div>}
+                <div className="flowdoc-card-plats">
+                  {ALL_PLATFORMS.map((p2) => (<div key={p2} className={platDotClass(status[p2])} title={`${p2}: ${status[p2]}`} />))}
+                </div>
+                {(() => {
+                  const bs = runs.baselineByState?.[s.num];
+                  if (!bs) return null;
+                  const driftPlatforms = Object.entries(bs).filter(([, v]) => v.status === "drift").map(([k]) => k);
+                  const matchPlatforms = Object.entries(bs).filter(([, v]) => v.status === "match" || v.status === "new").map(([k]) => k);
+                  if (!driftPlatforms.length && !matchPlatforms.length) return null;
+                  return (
+                    <div className="flowdoc-card-baseline" title={`baseline: ${matchPlatforms.length} match, ${driftPlatforms.length} drift`}>
+                      {driftPlatforms.length > 0 ? (
+                        <span className="flowdoc-bl-drift">△ visual drift ({driftPlatforms.length}p)</span>
+                      ) : (
+                        <span className="flowdoc-bl-match">✓ baselined ({matchPlatforms.length}p)</span>
+                      )}
+                    </div>
+                  );
+                })()}
+                {s.actions && s.actions.length > 0 && (
+                  <div className="flowdoc-card-actions">
+                    {s.actions.map((a, i) => {
+                      const glyph = a.kind === "edit" ? "✎" : a.kind === "add" ? "+" : a.kind === "delete" ? "🗑" : a.kind === "upload" ? "↑" : a.kind === "toggle" ? "◐" : a.kind === "submit" ? "▶" : a.kind === "approve" ? "✓" : "✗";
+                      const roleList = (a.allowedRoles?.length ? "Allowed: " + a.allowedRoles.join(", ") : "Any role") + (a.deniedRoles?.length ? " · Denied: " + a.deniedRoles.join(", ") : "");
+                      return (
+                        <span key={i} className={`flowdoc-action flowdoc-action-${a.kind}`} title={`${a.kind} ${a.target} · ${roleList}${a.comment ? " · " + a.comment : ""}`}>
+                          <span className="flowdoc-action-glyph">{glyph}</span>
+                          <span className="flowdoc-action-target">{a.target}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
+              </div>
+            );
+          })}
+          {marquee && (
+            <div
+              className="flowdoc-marquee"
+              style={{
+                position: "absolute",
+                left: marquee.x,
+                top: marquee.y,
+                width: marquee.w,
+                height: marquee.h,
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
+        </div>
+      </div>
+      </div>
+
+      <div className="flowdoc-scen-bar">
+        <b>Sequence:</b>
+        {activeScenario ? (
+          <>
+            <span className="flowdoc-seq">
+              {activeScenario.path.map((n, i) => (
+                <span key={i}>
+                  <span
+                    className="flowdoc-seq-num"
+                    title={stateByNum[n]?.title || ""}
+                    onClick={() => {
+                      setSelectedNums(new Set([n]));
+                      const el = document.querySelectorAll(".flowdoc-canvas .flowdoc-card");
+                      el.forEach((node) => {
+                        const numEl = node.querySelector(".flowdoc-card-num");
+                        if (numEl?.textContent === String(n)) (node as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+                      });
+                    }}
+                  >{n}</span>
+                  {i < activeScenario.path.length - 1 && <span className="flowdoc-seq-arr">→</span>}
+                </span>
+              ))}
+            </span>
+            <span className="flowdoc-seq-meta"><b>{activeScenario.title}</b> · {activeScenario.role ?? "any"}</span>
+            {activeScenario.comments?.length ? (
+              <div className="flowdoc-scen-comments">
+                {activeScenario.comments.map((c, i) => (
+                  <div key={i} className={`flowdoc-comment flowdoc-comment-${c.kind || "note"}`} title={`At step ${c.at_step + 1}`}>
+                    <b>@{c.at_step + 1}</b> {c.text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <span className="flowdoc-seq-empty">— pick a scenario above or click a card —</span>
+        )}
+      </div>
+    </div>
+  );
+}

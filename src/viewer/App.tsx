@@ -4,8 +4,15 @@ import { collectEdges } from "../schema";
 import { SitemapGraph } from "./components/SitemapGraph";
 import { SitemapSidebar } from "./components/SitemapSidebar";
 import { SitemapDetail } from "./components/SitemapDetail";
+import { CoverageMatrix } from "./components/CoverageMatrix";
+import { StateCanvas } from "./components/StateCanvas";
+import type { RunsData } from "./runs";
 
-export function App({ data }: { data: FlowDoc }) {
+type ViewTab = "graph" | "matrix" | "canvas";
+
+export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
+  const hasStates = !!(data.states && data.states.length);
+  const [tab, setTab] = useState<ViewTab>(hasStates ? "canvas" : runs.runs.length ? "matrix" : "graph");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<string | null>(null);
@@ -14,8 +21,10 @@ export function App({ data }: { data: FlowDoc }) {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
+  const screens = useMemo<Screen[]>(() => data.screens ?? [], [data.screens]);
+
   const filteredScreens = useMemo<Screen[]>(() => {
-    return data.screens.filter((s) => {
+    return screens.filter((s) => {
       if (kindFilter && s.kind !== kindFilter) return false;
       if (roleFilter) {
         if (!s.roles?.includes(roleFilter) && !s.roles?.includes("all")) {
@@ -25,7 +34,7 @@ export function App({ data }: { data: FlowDoc }) {
       if (s.group && collapsedGroups.has(s.group)) return false;
       return true;
     });
-  }, [data.screens, roleFilter, kindFilter, collapsedGroups]);
+  }, [screens, roleFilter, kindFilter, collapsedGroups]);
 
   const edges = useMemo(() => collectEdges(data), [data]);
 
@@ -53,11 +62,30 @@ export function App({ data }: { data: FlowDoc }) {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app ${tab === "matrix" ? "app-matrix" : ""} ${tab === "canvas" ? "app-canvas" : ""}`}>
       <header className="topbar">
         <div className="title">
           <h1>{data.title}</h1>
           {data.subtitle ? <span className="sub">{data.subtitle}</span> : null}
+        </div>
+        <div className="topbar-tabs">
+          {hasStates && (
+            <button type="button" className={`tab ${tab === "canvas" ? "on" : ""}`} onClick={() => setTab("canvas")}>
+              ⊕ Canvas
+              <span className="tab-count">{data.states?.length ?? 0}</span>
+            </button>
+          )}
+          {!hasStates && screens.length > 0 && (
+            <button type="button" className={`tab ${tab === "graph" ? "on" : ""}`} onClick={() => setTab("graph")}>
+              ◆ Graph
+            </button>
+          )}
+          {(runs.runs.length > 0 || (runs.baselineRunsCount ?? 0) > 0) && (
+            <button type="button" className={`tab ${tab === "matrix" ? "on" : ""}`} onClick={() => setTab("matrix")}>
+              ▦ Coverage matrix
+              {runs.runs.length ? <span className="tab-count">{runs.runs.length} runs</span> : null}
+            </button>
+          )}
         </div>
         <div className="topbar-right">
           <button
@@ -69,53 +97,68 @@ export function App({ data }: { data: FlowDoc }) {
             ⌨ ?
           </button>
           <span className="badge">
-            {data.screens.length} screens · {edges.length} nav edges
+            {hasStates
+              ? `${data.states?.length} states · ${data.transitions?.length ?? 0} transitions · ${data.scenarios?.length ?? 0} scenarios`
+              : `${screens.length} screens · ${edges.length} nav edges`
+            }
             {data.roles?.length ? ` · ${data.roles.length} roles` : ""}
           </span>
         </div>
       </header>
 
-      <SitemapSidebar
-        roles={data.roles ?? []}
-        groups={data.groups ?? []}
-        screens={data.screens}
-        filteredScreens={filteredScreens}
-        collapsedGroups={collapsedGroups}
-        selectedId={selectedId}
-        roleFilter={roleFilter}
-        kindFilter={kindFilter}
-        searchInputRef={searchInputRef}
-        onSelectScreen={setSelectedId}
-        onRoleFilter={(id) => setRoleFilter(id === roleFilter ? null : id)}
-        onKindFilter={(k) => setKindFilter(k === kindFilter ? null : k)}
-        onToggleGroup={toggleGroup}
-      />
+      {tab === "graph" ? (
+        <>
+          <SitemapSidebar
+            roles={data.roles ?? []}
+            groups={data.groups ?? []}
+            screens={screens}
+            filteredScreens={filteredScreens}
+            collapsedGroups={collapsedGroups}
+            selectedId={selectedId}
+            roleFilter={roleFilter}
+            kindFilter={kindFilter}
+            searchInputRef={searchInputRef}
+            onSelectScreen={setSelectedId}
+            onRoleFilter={(id) => setRoleFilter(id === roleFilter ? null : id)}
+            onKindFilter={(k) => setKindFilter(k === kindFilter ? null : k)}
+            onToggleGroup={toggleGroup}
+          />
 
-      <main className="canvas">
-        <SitemapGraph
-          screens={data.screens}
-          edges={edges}
-          groups={data.groups ?? []}
-          roles={data.roles ?? []}
-          visibleScreenIds={filteredIds}
-          collapsedGroups={collapsedGroups}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onFocusSearch={focusSearch}
-          onClearSelection={clearSelection}
-        />
-      </main>
+          <main className="canvas">
+            <SitemapGraph
+              screens={screens}
+              edges={edges}
+              groups={data.groups ?? []}
+              roles={data.roles ?? []}
+              visibleScreenIds={filteredIds}
+              collapsedGroups={collapsedGroups}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onFocusSearch={focusSearch}
+              onClearSelection={clearSelection}
+            />
+          </main>
 
-      <aside className="detail">
-        <SitemapDetail
-          screen={data.screens.find((s) => s.id === selectedId) ?? null}
-          allScreens={data.screens}
-          roles={data.roles ?? []}
-          groups={data.groups ?? []}
-          edges={edges}
-          onJumpTo={setSelectedId}
-        />
-      </aside>
+          <aside className="detail">
+            <SitemapDetail
+              screen={screens.find((s) => s.id === selectedId) ?? null}
+              allScreens={screens}
+              roles={data.roles ?? []}
+              groups={data.groups ?? []}
+              edges={edges}
+              onJumpTo={setSelectedId}
+            />
+          </aside>
+        </>
+      ) : tab === "matrix" ? (
+        <main className="canvas canvas-matrix">
+          <CoverageMatrix screens={screens} runs={runs} />
+        </main>
+      ) : (
+        <main className="canvas canvas-fullbleed">
+          <StateCanvas doc={data} runs={runs} />
+        </main>
+      )}
 
       {showHelp ? (
         <div className="kbd-help" onClick={() => setShowHelp(false)}>

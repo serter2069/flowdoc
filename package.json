@@ -35,20 +35,28 @@
   },
   "scripts": {
     "build:viewer": "node scripts/build-viewer.mjs",
-    "build:cli": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/cli.js --banner:js=\"#!/usr/bin/env node\"",
+    "build:cli": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/cli.js --banner:js=\"#!/usr/bin/env node\" --external:playwright --external:playwright-core --external:chromium-bidi --external:better-sqlite3 --external:fast-glob",
     "build": "npm run build:viewer && npm run build:cli && chmod +x dist/cli.js",
     "dev": "npm run build && node dist/cli.js build examples/pluto/flows.json -o examples/pluto/flowdoc.html",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
     "@xyflow/react": "^12.10.2",
+    "better-sqlite3": "^12.10.0",
     "commander": "^14.0.3",
     "dagre": "^0.8.5",
+    "fast-glob": "^3.3.3",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.60.0",
+    "pngjs": "^7.0.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/dagre": "^0.7.54",
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",

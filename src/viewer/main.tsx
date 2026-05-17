@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import type { FlowDoc } from "../schema";
+import { loadRuns } from "./runs";
 
 declare global {
   interface Window {
@@ -25,5 +26,6 @@ function loadData(): FlowDoc {
 }
 
 const data = loadData();
+const runs = loadRuns();
 const root = createRoot(document.getElementById("root")!);
-root.render(<App data={data} />);
+root.render(<App data={data} runs={runs} />);
