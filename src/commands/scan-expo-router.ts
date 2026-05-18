@@ -8,6 +8,7 @@ import type { FlowDoc, State, Transition } from "../schema.js";
 interface ScanExpoOpts {
   out: string;
   merge?: string;
+  apiDir?: string;
 }
 
 const API_URL_RE = /\bapi\s*\.\s*(?:get|post|put|patch|delete)\s*<[^>]*>?\s*\(\s*[`'"]([^`'"]+)[`'"]|\bapi\s*\.\s*(?:get|post|put|patch|delete)\s*\(\s*[`'"]([^`'"]+)[`'"]/g;
@@ -260,7 +261,12 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
   // ─── Optional: backend API states from sibling api-server/src/routes ───
   let apiCount = 0;
   let crossLinks = 0;
-  const apiServerDir = resolve(root, "../api-server/src/routes");
+  // Resolve API routes dir: explicit --api-dir flag, else conventional sibling
+  // ../api-server/src/routes (pnpm-workspace layout used by aresgun/dressit).
+  // P2PTax-style mono-repos with api/ inside the root pass --api-dir explicitly.
+  const apiServerDir = opts.apiDir
+    ? resolve(process.cwd(), opts.apiDir)
+    : resolve(root, "../api-server/src/routes");
   // Map from a canonical path (e.g. "/posts/:id") → backend state num
   const apiPathToNum = new Map<string, number>();
   if (existsSync(apiServerDir)) {

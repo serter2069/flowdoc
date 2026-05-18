@@ -99,6 +99,7 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
               <option value="pluto">Pluto</option>
               <option value="aresgun">AresGun</option>
               <option value="dressit">DressIT</option>
+              <option value="p2ptax">P2PTax (Etalon)</option>
             </select>
           )}
           <h1>{data.title}</h1>

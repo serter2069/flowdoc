@@ -70,7 +70,8 @@ program
   .argument("[dir]", "Expo project root (auto-detects app/ or src/app/)", ".")
   .option("-o, --out <path>", "Output path (when not merging)", "flows-expo.json")
   .option("--merge <path>", "Merge into an existing flows.json instead of overwriting")
-  .action((dirArg: string | undefined, opts: any) => scanExpoCommand(dirArg, { out: opts.out, merge: opts.merge }));
+  .option("--api-dir <path>", "Explicit backend routes dir (Express). Default: <root>/../api-server/src/routes")
+  .action((dirArg: string | undefined, opts: any) => scanExpoCommand(dirArg, { out: opts.out, merge: opts.merge, apiDir: opts.apiDir }));
 
 program
   .command("serve")
