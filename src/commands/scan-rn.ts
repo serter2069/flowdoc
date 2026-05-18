@@ -48,7 +48,7 @@ function inferRoleFromName(name: string): string[] {
   if (/^login|^signin|^signup|^register|^forgot|^reset|^password$|^public[a-z]/.test(n)) return ["anon"];
 
   // Worker-centric screens (own schedule, own earnings, own appointments)
-  if (/^worker|^myapp|^myjob|^myschedule|^useravailab|earnings$|payoutslip/.test(n)) return ["worker"];
+  if (/^worker|^myapp|^myjob|^myschedule|earnings$|payoutslip/.test(n)) return ["worker"];
 
   // Admin-only (tenant/security/billing/template/audit/zip-routing/vertical/payout-rate config)
   if (/^vertical|^payoutrate|^securit|emailtempl|emailmanag|emailactiv|stripewebhook|^auditfeed|passwordaudit|^ziprouting|^placeholder|^settings|^companies$|^companydetail$|^companyform$/.test(n)) {
@@ -59,7 +59,7 @@ function inferRoleFromName(name: string): string[] {
   if (/^dispatcher|dispatch/.test(n)) return ["dispatcher"];
 
   // Manager-centric: CRUD on bookings, customers, offers, products, schedule, team, communications, checklists
-  if (/^booking|^customer|^offer|^product|^payment|^review|^schedule|^team|^userdetail|^communication|^thread|^inbox|^notification|^checklist|^dashboard|^complete|^pulse|^audit$/.test(n)) {
+  if (/^booking|^customer|^offer|^product|^payment|^review|^schedule|^team|^userdetail|^useravailab|^communication|^thread|^inbox|^notification|^checklist|^dashboard|^complete|^pulse|^audit$/.test(n)) {
     return ["manager"];
   }
 
