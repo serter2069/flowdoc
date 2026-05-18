@@ -8,7 +8,7 @@ const KIND_GLYPH: Record<StateKind, string> = {
   effect: "⚡", email: "✉", push: "📱", api: "⇄", db: "▤", webhook: "🌐", condition: "?",
 };
 
-const COL_W = 340, ROW_H = 180, PAD_X = 40, PAD_Y = 60, CARD_W = 220, CARD_H = 110;
+const COL_W = 340, ROW_H = 180, PAD_X = 40, PAD_Y = 60, CARD_W = 280, CARD_H = 130;
 const ROLE_HEX: Record<string, string> = {
   anon: "#64748b", client: "#c026d3", worker: "#ea580c",
   dispatcher: "#16a34a", manager: "#2563eb", admin: "#9333ea", any: "#94a3b8",

@@ -1175,7 +1175,12 @@ body,
   margin-bottom: 1px; display: flex; justify-content: space-between;
 }
 .flowdoc-card-glyph { font-size: 11px; }
-.flowdoc-card-title { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
+.flowdoc-card-title {
+  font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3;
+  margin-bottom: 4px; padding-right: 32px;   /* leave room for the floating #num badge */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis; word-break: break-word;
+}
 .flowdoc-card-path {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px; color: var(--accent); background: #dbeafe;
@@ -1322,36 +1327,30 @@ body,
 }
 .flowdoc-canvas-inner { will-change: transform; }
 
-/* Card with left role-bar */
+/* Card body: title is the star — let it wrap to 2 lines, ellipsis on third */
 .flowdoc-card {
   display: flex; padding: 0;
-  width: 220px;
+  width: 280px;
   overflow: hidden;
 }
+/* Role bar collapsed to a thin colored stripe (no text on canvas — full role
+   names + glyphs live in the double-click details modal instead). */
 .flowdoc-card-rolebar {
   display: flex; flex-direction: column;
-  width: 36px; flex-shrink: 0;
+  width: 6px; flex-shrink: 0;
   border-right: 1px solid var(--border);
-  background: #fafbfc;
 }
-.flowdoc-role-stripe {
-  flex: 1; min-height: 22px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 800; letter-spacing: .02em;
-  text-transform: uppercase;
-  padding: 2px;
-}
-/* Render only the first letter of the role inside the stripe (visible even at 20% zoom) */
-.flowdoc-role-stripe-text { font-size: 14px; }
-.flowdoc-role-stripe-text::first-letter { font-weight: 900; }
-.flowdoc-role-stripe-anon { background: #e2e8f0; color: #334155; }
-.flowdoc-role-stripe-client { background: #fae8ff; color: #86198f; }
-.flowdoc-role-stripe-worker { background: #ffedd5; color: #9a3412; }
-.flowdoc-role-stripe-dispatcher { background: #dcfce7; color: #166534; }
-.flowdoc-role-stripe-manager { background: #dbeafe; color: #1e40af; }
-.flowdoc-role-stripe-admin { background: #f3e8ff; color: #6b21a8; }
-.flowdoc-role-stripe-any { background: #f1f5f9; color: #64748b; }
-.flowdoc-role-stripe-text { white-space: nowrap; }
+.flowdoc-role-stripe { flex: 1; min-height: 6px; }
+.flowdoc-role-stripe-text { display: none; }   /* text only in modal */
+.flowdoc-role-stripe-anon { background: #94a3b8; }
+.flowdoc-role-stripe-client { background: #c026d3; }
+.flowdoc-role-stripe-worker { background: #ea580c; }
+.flowdoc-role-stripe-dispatcher { background: #16a34a; }
+.flowdoc-role-stripe-manager { background: #2563eb; }
+.flowdoc-role-stripe-admin { background: #9333ea; }
+.flowdoc-role-stripe-any { background: #cbd5e1; }
+.flowdoc-role-stripe-user { background: #0891b2; }
+.flowdoc-role-stripe-seller { background: #d97706; }
 .flowdoc-card-body {
   flex: 1; padding: 8px 10px;
   min-width: 0;

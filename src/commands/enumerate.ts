@@ -342,6 +342,53 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
     candidates.push(...survivors);
   }
 
+  // Greedy set-cover by TRANSITIONS. If "Login → Dashboard" already appears in
+  // some long scenario, we don't need a separate short scenario that just hits
+  // those two states. Pick the minimum subset of scenarios that together cover
+  // every transition reachable by ANY auto-scenario.
+  //
+  // Hand-written scenarios are pinned (never dropped) and their transitions
+  // count as already-covered going in. We only prune *auto-generated* candidates.
+  const pinnedTrans = new Set<string>();
+  for (const k of kept) {
+    for (let i = 0; i < k.path.length - 1; i++) pinnedTrans.add(`${k.path[i]}→${k.path[i + 1]}`);
+  }
+  const uncovered = new Set<string>();
+  for (const c of candidates) {
+    for (let i = 0; i < c.path.length - 1; i++) {
+      const k = `${c.path[i]}→${c.path[i + 1]}`;
+      if (!pinnedTrans.has(k)) uncovered.add(k);
+    }
+  }
+  const minimalCover: Scenario[] = [];
+  const minimalCoverSet = new Set<string>();   // ids
+  // Pre-sort: longer (more new coverage potential) first, then by role spread
+  const sorted = candidates.slice().sort((a, b) => b.path.length - a.path.length);
+  while (uncovered.size > 0) {
+    let best: Scenario | null = null;
+    let bestGain = 0;
+    for (const c of sorted) {
+      if (minimalCoverSet.has(c.id)) continue;
+      let gain = 0;
+      for (let i = 0; i < c.path.length - 1; i++) {
+        if (uncovered.has(`${c.path[i]}→${c.path[i + 1]}`)) gain++;
+      }
+      if (gain > bestGain) { bestGain = gain; best = c; }
+    }
+    if (!best || bestGain === 0) break;
+    minimalCover.push(best);
+    minimalCoverSet.add(best.id);
+    for (let i = 0; i < best.path.length - 1; i++) {
+      uncovered.delete(`${best.path[i]}→${best.path[i + 1]}`);
+    }
+  }
+  const coverDropped = candidates.length - minimalCover.length;
+  if (coverDropped > 0) {
+    console.log(`  ↳ set-cover pruned ${coverDropped} scenarios — kept ${minimalCover.length} that together cover every transition reachable from auto-scenarios`);
+    candidates.length = 0;
+    candidates.push(...minimalCover);
+  }
+
   const lenStats = candidates.reduce((m, s) => { m.set(s.path.length, (m.get(s.path.length) ?? 0) + 1); return m; }, new Map<number, number>());
   console.log(`✓ enumerated ${paths.size} unique paths from ${entries.length} entry state(s)`);
   console.log(`  path length distribution: ${[...lenStats.entries()].sort((a, b) => a[0] - b[0]).map(([l, n]) => `${l}=${n}`).join(", ")}`);
