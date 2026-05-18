@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { extractActionsFromJsx } from "./jsx-actions.js";
 import { scanOrvalHooks, extractActionsFromOrvalHooks } from "./orval-hooks.js";
-import type { StateAction } from "../schema.js";
+import {
+  extractControlsFromJsx,
+  extractParamsFromPage,
+  extractParamsFromZodFile,
+  extractControlsFromExpressRouteFile,
+} from "./controls-scanner.js";
+import type { Control, StateAction, StateParam } from "../schema.js";
 import { basename, join, relative, resolve, sep } from "node:path";
 import type { FlowDoc, State, Transition } from "../schema.js";
 
@@ -90,6 +96,8 @@ interface ExpoScreen {
   navTo: Set<string>;       // route strings (normalized)
   apiCalls: Set<string>;
   actions: StateAction[];   // JSX-extracted button actions
+  controls: Control[];      // every interactive element (input/select/file/scroll/...)
+  params: StateParam[];     // route/query params + types (incl. enum domains)
   file: string;
 }
 
@@ -141,6 +149,17 @@ function readScreens(appRoot: string, orvalHookMap: Map<string, any>): ExpoScree
       actions.push(a);
     }
 
+    const controls = extractControlsFromJsx(src);
+    const params = extractParamsFromPage(src);
+    // Also surface route-shape params (`:id` in /specialist/:id) even when
+    // the page doesn't typed-call useLocalSearchParams.
+    for (const m of route.matchAll(/\[([^\]]+)\]/g)) {
+      const name = m[1].replace(/^\.\.\./, "");
+      if (!params.some((p) => p.name === name)) {
+        params.push({ name, source: "route", type: "string", required: true });
+      }
+    }
+
     const idBase = route === "/" ? "home" : route.replace(/^\//, "").replace(/[\/\[\]]/g, "-");
     screens.push({
       id: "expo-" + slugify(idBase || "home"),
@@ -151,6 +170,8 @@ function readScreens(appRoot: string, orvalHookMap: Map<string, any>): ExpoScree
       navTo,
       apiCalls,
       actions,
+      controls,
+      params,
       file,
     });
   }
@@ -240,6 +261,8 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
       col, row,
       desc: s.apiCalls.size ? `API calls: ${[...s.apiCalls].slice(0, 5).join(", ")}${s.apiCalls.size > 5 ? "…" : ""}` : undefined,
       ...(s.actions.length ? { actions: s.actions } : {}),
+      ...(s.controls.length ? { controls: s.controls } : {}),
+      ...(s.params.length ? { params: s.params } : {}),
     });
     idToNum.set(s.id, nextNum);
     nextNum++;
@@ -284,6 +307,12 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
     // listed together. e.g. GET/POST/DELETE /listings/:id → one card titled
     // "/listings/:id · GET POST DELETE". Cuts API card count by ~30% for
     // typical REST APIs and matches how a tester thinks about endpoints.
+    // Pre-read each route file once so we can extract Zod/multer info per route.
+    const routeFileSrc = new Map<string, string>();
+    for (const r of apiRoutes) {
+      if (!routeFileSrc.has(r.file)) routeFileSrc.set(r.file, readFileSync(r.file, "utf8"));
+    }
+
     for (const [resource, routes] of byFile) {
       const byPath = new Map<string, ApiRoute[]>();
       for (const r of routes) {
@@ -293,6 +322,23 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
       for (const [pth, routesForPath] of byPath) {
         const methods = [...new Set(routesForPath.map((r) => r.method))].sort();
         const id = "api-" + slugify(pth);
+        // Aggregate file-side controls (multer.single/array, sendFile) + Zod
+        // enums across every handler defined in this resource file.
+        const apiControls: Control[] = [];
+        const apiParams: StateParam[] = [];
+        for (const r of routesForPath) {
+          const src = routeFileSrc.get(r.file) || "";
+          for (const c of extractControlsFromExpressRouteFile(src)) {
+            if (!apiControls.some((x) => x.kind === c.kind && x.label === c.label)) apiControls.push(c);
+          }
+          for (const p of extractParamsFromZodFile(src)) {
+            if (!apiParams.some((x) => x.name === p.name)) apiParams.push(p);
+          }
+        }
+        // Route-shape params (`:id` etc.) on the backend path too.
+        for (const m of pth.matchAll(/:(\w+)/g)) {
+          if (!apiParams.some((x) => x.name === m[1])) apiParams.push({ name: m[1], source: "route", type: "string", required: true });
+        }
         states.push({
           num: nextNum,
           id,
@@ -303,6 +349,8 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
           col: backendCol,
           row: backendRow,
           desc: `Express route in ${resource}.ts · methods: ${methods.join(", ")}`,
+          ...(apiControls.length ? { controls: apiControls } : {}),
+          ...(apiParams.length ? { params: apiParams } : {}),
         });
         idToNum.set(id, nextNum);
         const canonical = pth.replace(/\{var\}/g, ":id");

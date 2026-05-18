@@ -160,13 +160,18 @@ export function ScenariosSidebar({
                     const st = scenarioStatus(sc, runs);
                     const isOn = activeScenarioIds.has(sc.id);
                     const colorDot = isOn ? scenarioColor.get(sc.id) : null;
+                    const optCount = ((sc as any).optionAssignments ?? []).length;
+                    const optList = ((sc as any).optionAssignments ?? []).slice(0, 6).map((a: any) =>
+                      `#${a.stateNum} ${a.target.kind === "control" ? `c[${a.target.idx}]` : a.target.name}=${a.option}`
+                    ).join(" · ");
+                    const tip = (sc.narrative ?? sc.title) + (optCount ? `\n\nOptions exercised (${optCount}):\n${optList}` : "");
                     return (
                       <button
                         key={sc.id}
                         type="button"
                         className={`flowdoc-sidebar-item st-${st} ${isOn ? "on" : ""}`}
                         onClick={(e) => onSelect(sc.id, e.metaKey || e.ctrlKey || e.shiftKey)}
-                        title={sc.narrative ?? sc.title}
+                        title={tip}
                       >
                         <span
                           className="flowdoc-sidebar-item-bullet"
@@ -176,6 +181,9 @@ export function ScenariosSidebar({
                         <span className="flowdoc-sidebar-item-id">{sc.id.toUpperCase()}</span>
                         <span className="flowdoc-sidebar-item-len">{sc.path.length}</span>
                         <span className="flowdoc-sidebar-item-title">{sc.title}</span>
+                        {optCount > 0 && (
+                          <span className="flowdoc-sidebar-item-opts" title={`${optCount} option pick(s) — hover for details`}>⚙{optCount}</span>
+                        )}
                       </button>
                     );
                   })}

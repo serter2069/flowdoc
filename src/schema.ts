@@ -77,6 +77,7 @@ const PositionSchema = z.object({
 
 const ActionKindSchema = z.enum([
   "edit", "add", "delete", "upload", "toggle", "submit", "approve", "reject",
+  "select", "scroll", "otp", "download",       // full-coverage extension
 ]);
 
 const StateActionSchema = z.object({
@@ -87,6 +88,42 @@ const StateActionSchema = z.object({
   selector: SelectorSchema.optional(),          // how to find the editor/button
   expect: z.string().optional(),                // what success looks like: "field saves, DB updated"
   comment: z.string().optional(),
+});
+
+/* ─── Controls + params (full-coverage scanner output) ─── */
+
+const ControlKindSchema = z.enum([
+  "press",       // button / pressable
+  "input",       // <TextInput> single-line
+  "textarea",    // multiline input
+  "select",      // <Picker>/<Select> with finite domain
+  "toggle",      // <Switch>
+  "slider",      // numeric range
+  "scroll",      // <ScrollView>/<FlatList>
+  "file",        // single-file picker (expo-document-picker, multer single)
+  "files",       // multi-file picker
+  "image",       // expo-image-picker
+  "otp",         // OTP code field
+  "submit",      // form submit button
+  "link",        // navigation / openURL
+]);
+
+const ControlSchema = z.object({
+  kind: ControlKindSchema,
+  label: z.string(),                            // visible label / accessibility name
+  domain: z.array(z.string()).optional(),       // for select: ["draft","published","rejected"]
+  accept: z.string().optional(),                // for file: "application/pdf,image/*"
+  multiple: z.boolean().optional(),             // multi-file picker
+  required: z.boolean().optional(),
+  source: z.string().optional(),                // file:line where it was found (debug)
+});
+
+const StateParamSchema = z.object({
+  name: z.string(),                             // "id", "status", "slug"
+  source: z.enum(["route", "query", "body", "header"]),
+  type: z.string().optional(),                  // "uuid", "string", "number", "enum"
+  values: z.array(z.string()).optional(),       // enumerated values if known (Zod enum, TS union)
+  required: z.boolean().optional(),
 });
 
 const StateSchema = z.object({
@@ -104,6 +141,8 @@ const StateSchema = z.object({
   enterHint: StepHintSchema.optional(),         // how a test arrives at this state
   comments: z.array(z.string()).optional(),
   actions: z.array(StateActionSchema).optional(), // mutate-actions on this state (edit field, upload, delete, etc.)
+  controls: z.array(ControlSchema).optional(),    // full-coverage: every interactive element + its finite domain
+  params: z.array(StateParamSchema).optional(),   // route / query / body params (with values[] if enum'd)
 });
 
 const TransitionSchema = z.object({
@@ -121,6 +160,15 @@ const ScenarioCommentSchema = z.object({
   kind: z.enum(["note", "warning", "todo"]).optional(),
 });
 
+const OptionAssignmentSchema = z.object({
+  stateNum: z.number().int().positive(),
+  target: z.union([
+    z.object({ kind: z.literal("control"), idx: z.number().int().nonnegative() }),
+    z.object({ kind: z.literal("param"), name: z.string() }),
+  ]),
+  option: z.string(),
+});
+
 const ScenarioSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -131,6 +179,11 @@ const ScenarioSchema = z.object({
   baseline_id: z.string().optional(),         // links to .flowdoc/baseline/<id>/
   comments: z.array(ScenarioCommentSchema).optional(),
   tags: z.array(z.string()).optional(),
+  // Per-scenario option picks. Each entry says: "when this scenario passes through
+  // state #N, set control[idx] (or param 'name') to this option". One option per
+  // (state, target) per scenario — the set-cover distributes options across scenarios
+  // rather than cloning a scenario per option.
+  optionAssignments: z.array(OptionAssignmentSchema).optional(),
 });
 
 export const FlowDocSchema = z.object({
@@ -166,6 +219,10 @@ export type StepHint = z.infer<typeof StepHintSchema>;
 export type Selector = z.infer<typeof SelectorSchema>;
 export type StateAction = z.infer<typeof StateActionSchema>;
 export type ActionKind = z.infer<typeof ActionKindSchema>;
+export type Control = z.infer<typeof ControlSchema>;
+export type ControlKind = z.infer<typeof ControlKindSchema>;
+export type StateParam = z.infer<typeof StateParamSchema>;
+export type OptionAssignment = z.infer<typeof OptionAssignmentSchema>;
 
 export function validateFlowDoc(raw: unknown, opts: { strictScenarios?: boolean } = {}): FlowDoc {
   const strictScenarios = opts.strictScenarios !== false;     // default: strict

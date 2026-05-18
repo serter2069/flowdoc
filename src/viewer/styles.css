@@ -1268,6 +1268,57 @@ body,
 .flowdoc-action-approve { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
 .flowdoc-action-reject { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 
+/* Control chips (full-coverage discovery: inputs, selects, files, scroll, OTP, …) */
+.flowdoc-card-controls {
+  display: flex; gap: 3px; flex-wrap: wrap;
+  margin-top: 4px; padding-top: 4px;
+  border-top: 1px dashed #e2e8f0;
+}
+.flowdoc-control {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; padding: 1px 5px; border-radius: 4px;
+  background: #f8fafc; color: #475569; border: 1px solid #e2e8f0;
+  font-weight: 500; cursor: help;
+}
+.flowdoc-control-glyph { font-size: 10px; }
+.flowdoc-control-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flowdoc-control-input    { background: #eff6ff; color: #1e40af; border-color: #dbeafe; }
+.flowdoc-control-textarea { background: #eff6ff; color: #1e40af; border-color: #dbeafe; }
+.flowdoc-control-select   { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+.flowdoc-control-toggle   { background: #f3e8ff; color: #6b21a8; border-color: #e9d5ff; }
+.flowdoc-control-slider   { background: #ecfeff; color: #155e75; border-color: #a5f3fc; }
+.flowdoc-control-scroll   { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+.flowdoc-control-file     { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.flowdoc-control-files    { background: #fed7aa; color: #9a3412; border-color: #fdba74; }
+.flowdoc-control-image    { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+.flowdoc-control-otp      { background: #dcfce7; color: #166534; border-color: #bbf7d0; font-weight: 600; }
+.flowdoc-control-submit   { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; font-weight: 600; }
+.flowdoc-control-link     { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+
+/* Param chips */
+.flowdoc-card-params {
+  display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px;
+}
+.flowdoc-param {
+  display: inline-flex; align-items: center;
+  font-size: 9px; padding: 1px 5px; border-radius: 999px;
+  background: #fff; color: #334155; border: 1px solid #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: help;
+}
+.flowdoc-param-route  { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
+.flowdoc-param-query  { background: #ecfccb; color: #3f6212; border-color: #d9f99d; }
+.flowdoc-param-body   { background: #fae8ff; color: #86198f; border-color: #f5d0fe; }
+.flowdoc-param-header { background: #e5e5e5; color: #525252; border-color: #d4d4d4; }
+
+/* Sidebar option-pick badge */
+.flowdoc-sidebar-item-opts {
+  margin-left: auto;
+  font-size: 9px; padding: 1px 5px; border-radius: 4px;
+  background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe;
+  font-weight: 600; cursor: help;
+}
+
 /* Baseline drift indicator on cards */
 .flowdoc-card-baseline {
   margin-top: 4px; font-size: 9px; font-weight: 600;

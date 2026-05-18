@@ -865,6 +865,32 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                     })}
                   </div>
                 )}
+                {(s as any).controls && (s as any).controls.length > 0 && (
+                  <div className="flowdoc-card-controls">
+                    {((s as any).controls as any[]).map((c, i) => {
+                      const glyph = c.kind === "input" ? "▢" : c.kind === "textarea" ? "▤" : c.kind === "select" ? "☰" : c.kind === "toggle" ? "◐" : c.kind === "slider" ? "▬" : c.kind === "scroll" ? "↧" : c.kind === "file" ? "📎" : c.kind === "files" ? "📎×" : c.kind === "image" ? "🖼" : c.kind === "otp" ? "⊙" : c.kind === "submit" ? "▶" : c.kind === "link" ? "↗" : "•";
+                      const tipDomain = c.domain?.length ? ` · options: ${c.domain.join(", ")}` : "";
+                      const tipAccept = c.accept ? ` · accept: ${c.accept}` : "";
+                      const tipReq = c.required ? " · required" : "";
+                      const tipMulti = c.multiple ? " · multiple" : "";
+                      return (
+                        <span key={"c" + i} className={`flowdoc-control flowdoc-control-${c.kind}`} title={`${c.kind} · ${c.label}${tipDomain}${tipAccept}${tipReq}${tipMulti}`}>
+                          <span className="flowdoc-control-glyph">{glyph}</span>
+                          <span className="flowdoc-control-label">{c.label}{c.domain?.length ? `[${c.domain.length}]` : ""}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                {(s as any).params && (s as any).params.length > 0 && (
+                  <div className="flowdoc-card-params">
+                    {((s as any).params as any[]).map((p, i) => (
+                      <span key={"p" + i} className={`flowdoc-param flowdoc-param-${p.source}`} title={`${p.source} param · type=${p.type ?? "?"}${p.values?.length ? " · values: " + p.values.join(", ") : ""}${p.required ? " · required" : " · optional"}`}>
+                        {p.name}{p.values?.length ? `[${p.values.length}]` : (p.type && p.type !== "string") ? `:${p.type}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 </div>
               </div>
             );
@@ -955,6 +981,33 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                     <ul className="flowdoc-modal-list">{s.actions.map((a, i) => <li key={i}>{a.kind} → {a.target ?? ""} {a.allowedRoles ? `(roles: ${a.allowedRoles.join(",")})` : ""}</li>)}</ul>
                   </div>
                 )}
+                {(s as any).controls && (s as any).controls.length > 0 && (
+                  <div className="flowdoc-modal-row"><b>Controls ({(s as any).controls.length}):</b>
+                    <ul className="flowdoc-modal-list">
+                      {((s as any).controls as any[]).map((c, i) => (
+                        <li key={i}>
+                          <code>{c.kind}</code> {c.label}
+                          {c.domain?.length ? <> · options: <code>{c.domain.join(" · ")}</code></> : null}
+                          {c.accept ? <> · accept: <code>{c.accept}</code></> : null}
+                          {c.required ? " · required" : ""}
+                          {c.multiple ? " · multi" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(s as any).params && (s as any).params.length > 0 && (
+                  <div className="flowdoc-modal-row"><b>Params ({(s as any).params.length}):</b>
+                    <ul className="flowdoc-modal-list">
+                      {((s as any).params as any[]).map((p, i) => (
+                        <li key={i}>
+                          <code>{p.name}</code> ({p.source}, {p.type ?? "?"}{p.required ? "" : "?"})
+                          {p.values?.length ? <> = <code>{p.values.join(" | ")}</code></> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flowdoc-modal-row">
                   <b>Incoming ({incoming.length}):</b>
                   {incoming.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
@@ -981,9 +1034,24 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                   <b>Scenarios touching this state ({scenariosTouching.length}):</b>
                   {scenariosTouching.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
                     <ul className="flowdoc-modal-list">
-                      {scenariosTouching.slice(0, 10).map((sc) => (
-                        <li key={sc.id}><code style={{ color: "#475569" }}>{sc.id.toUpperCase()}</code> ({sc.role}) — {sc.title}</li>
-                      ))}
+                      {scenariosTouching.slice(0, 10).map((sc) => {
+                        const hereAssigns = ((sc as any).optionAssignments ?? []).filter((a: any) => a.stateNum === detailsNum);
+                        return (
+                          <li key={sc.id}>
+                            <code style={{ color: "#475569" }}>{sc.id.toUpperCase()}</code> ({sc.role}) — {sc.title}
+                            {hereAssigns.length > 0 && (
+                              <div style={{ fontSize: 10, color: "#475569", marginLeft: 6, marginTop: 2 }}>
+                                exercises: {hereAssigns.map((a: any, i: number) => {
+                                  const tgt = a.target.kind === "control"
+                                    ? ((s as any).controls?.[a.target.idx]?.label ?? `control[${a.target.idx}]`)
+                                    : `param ${a.target.name}`;
+                                  return <code key={i} style={{ background: "#f1f5f9", padding: "0 4px", borderRadius: 3, marginRight: 4 }}>{tgt}={a.option}</code>;
+                                })}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                       {scenariosTouching.length > 10 && <li style={{ color: "#94a3b8" }}>… +{scenariosTouching.length - 10} more</li>}
                     </ul>
                   )}
