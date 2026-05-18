@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { extractActionsFromJsx } from "./jsx-actions.js";
-import { scanOrvalHooks, extractActionsFromOrvalHooks } from "./orval-hooks.js";
+import { scanOrvalHooks, extractActionsFromOrvalHooks, extractApiUrlsFromOrvalHooks } from "./orval-hooks.js";
 import {
   extractControlsFromJsx,
   extractParamsFromPage,
@@ -18,6 +18,11 @@ interface ScanExpoOpts {
 }
 
 const API_URL_RE = /\bapi\s*\.\s*(?:get|post|put|patch|delete)\s*<[^>]*>?\s*\(\s*[`'"]([^`'"]+)[`'"]|\bapi\s*\.\s*(?:get|post|put|patch|delete)\s*\(\s*[`'"]([^`'"]+)[`'"]/g;
+// Custom `api()` / `api<T>()` wrapper called like `api<FnsDetail>(\`/api/fns/${id}\`)`.
+// Used by p2ptax (lib/api.ts) and other projects that don't expose api.METHOD methods.
+// The actual HTTP method lives in an options object; we treat any URL passed to such
+// a helper as an API call.
+const API_FN_URL_RE = /\bapi\s*<[^>]*>\s*\(\s*[`'"]([^`'"]+)[`'"]|\bapi\s*\(\s*[`'"]([^`'"]+)[`'"]/g;
 const FETCH_RE = /\bfetch\s*\(\s*['"`]([^'"`]+)['"`]/g;
 const AXIOS_RE = /\baxios\s*\.\s*(?:get|post|put|patch|delete)\s*\(\s*['"`]([^'"`]+)['"`]/g;
 // expo-router navigation: router.push("/foo"), router.replace("/bar"), router.navigate("/baz")
@@ -88,6 +93,11 @@ function extractApiUrls(src: string): Set<string> {
   for (const m of src.matchAll(API_URL_RE)) {
     const u = m[1] ?? m[2];
     if (!u) continue;
+    urls.add(u.replace(/\$\{[^}]+\}/g, "{var}"));
+  }
+  for (const m of src.matchAll(API_FN_URL_RE)) {
+    const u = m[1] ?? m[2];
+    if (!u || !u.startsWith("/")) continue;
     urls.add(u.replace(/\$\{[^}]+\}/g, "{var}"));
   }
   for (const m of src.matchAll(FETCH_RE)) {
@@ -162,6 +172,10 @@ function readScreens(appRoot: string, orvalHookMap: Map<string, any>): ExpoScree
     const navTo = extractNavTargets(src);
 
     const apiCalls = extractApiUrls(src);
+    // Add URLs from orval-generated react-query hooks the page references.
+    // Without this, pages that use only orval (no raw fetch/api.get) end up
+    // with an empty apiCalls set and never get page → api transitions.
+    for (const u of extractApiUrlsFromOrvalHooks(src, orvalHookMap)) apiCalls.add(u);
     // Merge JSX-extracted actions with orval react-query hook references.
     // Dedupe by (kind, expect) so the same endpoint reached two ways shows once.
     const jsxActions = extractActionsFromJsx(src);

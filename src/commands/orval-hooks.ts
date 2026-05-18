@@ -180,6 +180,36 @@ function labelFromHookName(hookName: string): string {
  *   • `useDeleteFavorite({ onSuccess: ... }).mutateAsync(...)`
  *   • direct raw-function call `deleteFavorite(id)`
  */
+/**
+ * Resolve every orval-generated react-query hook the page references
+ * to the URL it eventually calls. Used to populate apiCalls so
+ * page → backend-api transitions can be emitted even when the page
+ * never writes raw `api.get(...)` or `fetch(...)`.
+ *
+ * Returns method-tagged paths normalized with {var} for dynamic segments,
+ * matching what extractApiUrls produces for raw-fetch pages so downstream
+ * matchApiCallToBackend can treat both equivalently.
+ */
+export function extractApiUrlsFromOrvalHooks(
+  src: string,
+  hookMap: Map<string, OrvalEndpoint>
+): Set<string> {
+  const urls = new Set<string>();
+  if (hookMap.size === 0) return urls;
+  const names = [...hookMap.keys()].sort((a, b) => b.length - a.length);
+  if (names.length === 0) return urls;
+  const re = new RegExp(
+    "\\b(" + names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")\\b",
+    "g"
+  );
+  for (const m of src.matchAll(re)) {
+    const entry = hookMap.get(m[1]);
+    if (!entry) continue;
+    urls.add(entry.path.replace(/\$\{[^}]+\}/g, "{var}"));
+  }
+  return urls;
+}
+
 export function extractActionsFromOrvalHooks(
   src: string,
   hookMap: Map<string, OrvalEndpoint>
