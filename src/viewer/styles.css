@@ -1333,14 +1333,14 @@ body,
   width: 280px;
   overflow: hidden;
 }
-/* Role bar collapsed to a thin colored stripe (no text on canvas — full role
-   names + glyphs live in the double-click details modal instead). */
+/* Role bar: thick colored stripe on the left of every card — color is the
+   role marker. Full role names live in the double-click details modal. */
 .flowdoc-card-rolebar {
   display: flex; flex-direction: column;
-  width: 6px; flex-shrink: 0;
+  width: 12px; flex-shrink: 0;
   border-right: 1px solid var(--border);
 }
-.flowdoc-role-stripe { flex: 1; min-height: 6px; }
+.flowdoc-role-stripe { flex: 1; min-height: 12px; }
 .flowdoc-role-stripe-text { display: none; }   /* text only in modal */
 .flowdoc-role-stripe-anon { background: #94a3b8; }
 .flowdoc-role-stripe-client { background: #c026d3; }

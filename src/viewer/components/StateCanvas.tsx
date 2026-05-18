@@ -96,18 +96,54 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const activeScenarioId = activeScenarioIds.size === 1 ? [...activeScenarioIds][0] : "";
 
   function toggleScenario(id: string, additive: boolean) {
+    let nextIds: Set<string>;
     setActiveScenarioIds((prev) => {
-      if (id === "") return new Set();
+      if (id === "") { nextIds = new Set(); return new Set(); }
       if (!additive) {
-        if (prev.size === 1 && prev.has(id)) return new Set();
-        return new Set([id]);
+        if (prev.size === 1 && prev.has(id)) { nextIds = new Set(); return new Set(); }
+        nextIds = new Set([id]);
+        return nextIds;
       }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      nextIds = next;
       return next;
     });
     setOverlayRole(null);
+    // "Straighten up" — auto-fit camera to the union of selected scenarios'
+    // paths so the user sees the full chain at maximum legibility.
+    setTimeout(() => fitToScenarios(nextIds), 80);
+  }
+
+  function fitToScenarios(ids: Set<string>) {
+    if (ids.size === 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const nums = new Set<number>();
+    for (const sc of scenarios) if (ids.has(sc.id)) for (const n of sc.path) nums.add(n);
+    if (nums.size === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nums) {
+      const p = positions[n] ?? defaultPositionFor(states.find((s) => s.num === n)!);
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + CARD_W);
+      maxY = Math.max(maxY, p.y + CARD_H);
+    }
+    if (!isFinite(minX)) return;
+    const w = maxX - minX, h = maxY - minY;
+    const fitW = (el.clientWidth - 120) / w;
+    const fitH = (el.clientHeight - 120) / h;
+    const z = Math.min(1.2, Math.max(0.15, Math.min(fitW, fitH)));
+    const newPan = {
+      x: el.clientWidth / 2 - (minX + w / 2) * z,
+      y: el.clientHeight / 2 - (minY + h / 2) * z,
+    };
+    zoomRef.current = z;
+    panRef.current = newPan;
+    setZoom(z);
+    setPan(newPan);
   }
 
   // Drag state
@@ -388,6 +424,12 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   function startDrag(num: number, e: React.MouseEvent) {
     if (e.button !== 0) return;
     if (spaceDown.current) return;        // space-pan takes precedence
+    // Lock: when a scenario is active, only cards on that path are draggable.
+    // Stops accidental drags on neighbours while user is studying a path.
+    if (activeScenariosList.length > 0 && !cardsInScenario.has(num)) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     // If the clicked card is already in the selection, drag the WHOLE selection.
@@ -679,9 +721,11 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 <div className="flowdoc-card-kind">{s.kind.toUpperCase()} <span className="flowdoc-card-glyph">{KIND_GLYPH[s.kind]}</span></div>
                 <div className="flowdoc-card-title">{s.title}</div>
                 {s.path && <div className="flowdoc-card-path">{s.path}</div>}
-                <div className="flowdoc-card-plats">
-                  {ALL_PLATFORMS.map((p2) => (<div key={p2} className={platDotClass(status[p2])} title={`${p2}: ${status[p2]}`} />))}
-                </div>
+                {Object.values(status).some((v) => v !== "untested") && (
+                  <div className="flowdoc-card-plats">
+                    {ALL_PLATFORMS.map((p2) => (<div key={p2} className={platDotClass(status[p2])} title={`${p2}: ${status[p2]}`} />))}
+                  </div>
+                )}
                 {(() => {
                   const bs = runs.baselineByState?.[s.num];
                   if (!bs) return null;

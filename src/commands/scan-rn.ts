@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { FlowDoc, State, Transition } from "../schema.js";
+import type { FlowDoc, State, StateAction, Transition } from "../schema.js";
+import { extractActionsFromJsx } from "./jsx-actions.js";
 
 interface ScanRnOpts {
   out: string;
@@ -101,6 +102,7 @@ interface RnScreen {
   roles: string[];
   navTo: Set<string>;
   apiCalls: Set<string>;
+  actions: StateAction[];        // JSX-extracted button/handler actions
   file: string;
 }
 
@@ -165,13 +167,16 @@ function readScreens(srcRoot: string, screensDir: string): RnScreen[] {
       for (const u of urlsByFile.get(dep) ?? []) apiCalls.add(u);
     }
 
+    // JSX-extracted action buttons (e.g. <Pressable onPress={() => api.delete('/comments/123')}>Delete</Pressable>)
+    const actions = extractActionsFromJsx(src);
+
     out.push({
       id: "rn-" + slugify(componentName),
       componentName,
       registeredName: componentName.replace(/Screen$/, ""),
       title: titleizeScreen(componentName),
       roles: inferRoleFromName(componentName),
-      navTo, apiCalls,
+      navTo, apiCalls, actions,
       file,
     });
   }
@@ -262,7 +267,7 @@ export function scanRnCommand(rootArg: string | undefined, opts: ScanRnOpts) {
     const col = ROLE_COLS[s.roles[0]] ?? 6;
     const row = rowPerCol.get(col) ?? 0;
     rowPerCol.set(col, row + 1);
-    states.push({ num: nextNum, id: s.id, kind: "page", title: s.title, roles: s.roles, col, row });
+    states.push({ num: nextNum, id: s.id, kind: "page", title: s.title, roles: s.roles, col, row, ...(s.actions.length ? { actions: s.actions } : {}) });
     idToNum.set(s.id, nextNum);
     nextNum++;
   }

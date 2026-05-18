@@ -1,4 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { extractActionsFromJsx } from "./jsx-actions.js";
+import type { StateAction } from "../schema.js";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { FlowDoc, State, Transition } from "../schema.js";
 
@@ -85,6 +87,7 @@ interface ExpoScreen {
   roles: string[];
   navTo: Set<string>;       // route strings (normalized)
   apiCalls: Set<string>;
+  actions: StateAction[];   // JSX-extracted button actions
   file: string;
 }
 
@@ -123,6 +126,7 @@ function readScreens(appRoot: string): ExpoScreen[] {
     for (const m of src.matchAll(LINK_HREF_TPL_RE)) navTo.add(normalizeNavTarget(m[1]));
 
     const apiCalls = extractApiUrls(src);
+    const actions = extractActionsFromJsx(src);
 
     const idBase = route === "/" ? "home" : route.replace(/^\//, "").replace(/[\/\[\]]/g, "-");
     screens.push({
@@ -133,6 +137,7 @@ function readScreens(appRoot: string): ExpoScreen[] {
       roles: inferRoleFromRoute(route),
       navTo,
       apiCalls,
+      actions,
       file,
     });
   }
@@ -227,6 +232,7 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
       roles: s.roles,
       col, row,
       desc: s.apiCalls.size ? `API calls: ${[...s.apiCalls].slice(0, 5).join(", ")}${s.apiCalls.size > 5 ? "…" : ""}` : undefined,
+      ...(s.actions.length ? { actions: s.actions } : {}),
     });
     idToNum.set(s.id, nextNum);
     nextNum++;
