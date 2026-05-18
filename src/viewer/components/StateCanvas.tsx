@@ -56,6 +56,92 @@ function defaultPositionFor(s: State): { x: number; y: number } {
   return { x: PAD_X + col * COL_W, y: PAD_Y + row * ROW_H };
 }
 
+/**
+ * Compute a BFS-tree layout from scratch, in the browser.
+ *
+ * Same algorithm as src/commands/layout.ts (server-side) — kept in sync so
+ * the in-browser "Reset layout" button produces identical positions to a
+ * fresh `flowdoc rebuild`. Guarantees zero card overlap because columns are
+ * placed at `runningX += subCols * SUB_COL_W + gutter` (not at fixed col*W),
+ * so a wide column never bleeds into the next depth-band's space.
+ */
+function computeBfsTreeLayout(states: State[], transitions: { from: number; to: number }[]) {
+  const positions: Record<number, { x: number; y: number }> = {};
+  if (states.length === 0) return positions;
+  const COL_GUTTER = 80;
+  const SUB_COL_W = Math.max(CARD_W + 100, 380);    // sub-col width = card + breathing room
+  const SUB_ROW_H = CARD_H + 80;
+  const MAX_PER_COL = 10;
+
+  // BFS depth from Anonymous root (or first state)
+  const root = states.find((s) => /anonymous root/i.test(s.title)) ?? states[0];
+  const outEdges = new Map<number, number[]>();
+  for (const s of states) outEdges.set(s.num, []);
+  for (const t of transitions) outEdges.get(t.from)?.push(t.to);
+
+  const depth = new Map<number, number>();
+  depth.set(root.num, 0);
+  const queue: number[] = [root.num];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const d = depth.get(cur)!;
+    for (const next of outEdges.get(cur) ?? []) {
+      if (depth.has(next)) continue;
+      depth.set(next, d + 1);
+      queue.push(next);
+    }
+  }
+  // Orphans → final column
+  const maxDepth = Math.max(0, ...[...depth.values()]);
+  const orphanCol = maxDepth + 2;
+  for (const s of states) if (!depth.has(s.num)) depth.set(s.num, orphanCol);
+
+  // Group by column, sort within column for stable visual placement
+  const byCol = new Map<number, State[]>();
+  for (const s of states) {
+    const c = depth.get(s.num)!;
+    if (!byCol.has(c)) byCol.set(c, []);
+    byCol.get(c)!.push(s);
+  }
+  for (const arr of byCol.values()) {
+    arr.sort((a, b) => {
+      const ra = (a.roles ?? ["any"])[0];
+      const rb = (b.roles ?? ["any"])[0];
+      if (ra !== rb) return ra.localeCompare(rb);
+      return a.title.localeCompare(b.title);
+    });
+  }
+
+  // Place columns left→right with accumulating runningX so wide fan-out
+  // columns never overlap the next depth-band.
+  let runningX = PAD_X;
+  for (const col of [...byCol.keys()].sort((a, b) => a - b)) {
+    const list = byCol.get(col)!;
+    const subCols = Math.ceil(list.length / MAX_PER_COL);
+    const rowsPerSub = Math.ceil(list.length / subCols);
+    const totalH = rowsPerSub * SUB_ROW_H;
+    const startY = -totalH / 2 + SUB_ROW_H / 2;
+    list.forEach((s, i) => {
+      const sub = Math.floor(i / rowsPerSub);
+      const rowInSub = i % rowsPerSub;
+      positions[s.num] = {
+        x: runningX + sub * SUB_COL_W,
+        y: startY + rowInSub * SUB_ROW_H,
+      };
+    });
+    runningX += subCols * SUB_COL_W + COL_GUTTER;
+  }
+
+  // Normalize so all coords ≥ PAD_X / PAD_Y (no negative positions)
+  let minY = Infinity;
+  for (const p of Object.values(positions)) minY = Math.min(minY, p.y);
+  if (isFinite(minY) && minY < PAD_Y) {
+    const shift = PAD_Y - minY;
+    for (const p of Object.values(positions)) p.y += shift;
+  }
+  return positions;
+}
+
 function bezierPath(from: { x: number; y: number; w: number; h: number }, to: { x: number; y: number; w: number; h: number }) {
   let x1, y1, x2, y2;
   if (to.x > from.x + from.w / 2) { x1 = from.x + from.w; y1 = from.y + from.h / 2; x2 = to.x; y2 = to.y + to.h / 2; }
@@ -622,13 +708,9 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
         <button
           type="button"
           className="flowdoc-reset"
-          title="Snap all cards back to the BFS tree layout from flows.json"
+          title="Re-compute the BFS tree layout from scratch — guaranteed no overlap"
           onClick={() => {
-            const init: Record<number, { x: number; y: number }> = {};
-            for (const s of states) {
-              if (s.position) init[s.num] = { ...s.position };
-              else init[s.num] = defaultPositionFor(s);
-            }
+            const init = computeBfsTreeLayout(states, transitions);
             setPositions(init);
             onPositionsChange?.(init);
             setSelectedNums(new Set());

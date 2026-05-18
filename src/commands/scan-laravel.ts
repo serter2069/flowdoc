@@ -12,7 +12,10 @@ const AUTH_HINT = /(login|signin|signup|register|forgot|reset|auth)/i;
 // Customer-facing routes: this is the FIRST page a real client lands on to
 // create a new booking. Tagged "client" so the scenario tree shows their flow
 // distinctly from anon-auth flows (login/reset).
-const CLIENT_HINT = /(\/booking|\/property-lookup|\/public\/zip|\/public\/property|\/thanks|\/thank-you|\/confirm-booking|\/payment\/(success|cancel)|out-of-service|public-booking|public-consultation|available-time-slots)/i;
+// Anchored on /booking (singular, NOT /bookings — that's the manager list)
+// and exact public-funnel paths. Word boundaries prevent prefix matches like
+// /booking matching /booking-form (admin) or /bookings.csv (export).
+const CLIENT_HINT = /(?:^\/booking(?:\/|$)|\/property-lookup(?:\/|$)|\/public\/zip|\/public\/property|^\/thanks?(?:\/|$)|^\/thank-you|^\/confirm-booking|^\/payment\/(success|cancel)|^\/out-of-service|^\/public-booking|^\/public-consultation|^\/available-time-slots)/i;
 const ERROR_HINT = /(out-of-service|cancel|404|error)/i;
 const SUCCESS_HINT = /(thank|success|complete)/i;
 
