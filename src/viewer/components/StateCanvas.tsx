@@ -15,8 +15,6 @@ const ROLE_HEX: Record<string, string> = {
 };
 const ALL_PLATFORMS = ["web-desktop", "web-mobile", "ios", "android"] as const;
 type Platform = typeof ALL_PLATFORMS[number];
-const PLAT_SHORT: Record<Platform, string> = { "web-desktop": "Desktop", "web-mobile": "Mobile", ios: "iOS", android: "Android" };
-void PLAT_SHORT;
 
 interface StateCanvasProps {
   doc: FlowDoc;
@@ -870,11 +868,6 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                   ))}</div>
                 )}
                 {s.desc && <div className="flowdoc-modal-row"><b>Description:</b> {s.desc}</div>}
-                {(s as any).fields && (s as any).fields.length > 0 && (
-                  <div className="flowdoc-modal-row"><b>Fields:</b>
-                    <ul className="flowdoc-modal-list">{(s as any).fields.map((f: any, i: number) => <li key={i}>{f.name} <code>{f.type || ""}</code> {f.required ? "*" : ""}</li>)}</ul>
-                  </div>
-                )}
                 {s.actions && s.actions.length > 0 && (
                   <div className="flowdoc-modal-row"><b>Actions:</b>
                     <ul className="flowdoc-modal-list">{s.actions.map((a, i) => <li key={i}>{a.kind} → {a.target ?? ""} {a.allowedRoles ? `(roles: ${a.allowedRoles.join(",")})` : ""}</li>)}</ul>
