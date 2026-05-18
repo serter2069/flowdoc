@@ -361,6 +361,53 @@ program
     });
   });
 
+const runner = program.command("runner").description("Self-hosted scenario runner — daemon on Hetzner that gets kicked by webhook / cron / canvas button");
+
+runner
+  .command("start")
+  .description("Boot the runner HTTP daemon (long-running; bind to 127.0.0.1)")
+  .option("-p, --port <port>", "Port to listen on", (v) => parseInt(v, 10), 7799)
+  .option("-c, --config <path>", "Projects config path", "/etc/flowdoc/projects.json")
+  .option("-d, --data <dir>", "Data dir for job reports + screenshots", "/var/lib/flowdoc")
+  .option("--token <token>", "Override FLOWDOC_RUNNER_TOKEN")
+  .action(async (opts: any) => {
+    const { runnerDaemonCommand } = await import("./commands/runner-daemon.js");
+    await runnerDaemonCommand({
+      port: opts.port,
+      configPath: opts.config,
+      dataDir: opts.data,
+      token: opts.token ?? process.env.FLOWDOC_RUNNER_TOKEN,
+    });
+  });
+
+runner
+  .command("kick <project>")
+  .description("Send a /run request to the daemon — queues a new scenario run")
+  .option("-u, --url <url>", "Daemon URL", "http://127.0.0.1:7799")
+  .option("--token <token>", "Bearer token (defaults to FLOWDOC_RUNNER_TOKEN env)")
+  .option("--tree <id>", "Limit to one scenario tree")
+  .option("--base-url <url>", "Override the projects.json baseUrl for this run")
+  .option("--llm", "Enable LLM screenshot assertions", false)
+  .option("--dry-run", "Don't actually run Playwright; just exercise the queue", false)
+  .action(async (project: string, opts: any) => {
+    const { runnerKick } = await import("./commands/runner-daemon.js");
+    await runnerKick({
+      url: opts.url, token: opts.token ?? process.env.FLOWDOC_RUNNER_TOKEN,
+      project, treeId: opts.tree, baseUrl: opts.baseUrl,
+      llm: !!opts.llm, dryRun: !!opts.dryRun,
+    });
+  });
+
+runner
+  .command("status")
+  .description("Show daemon health + last 10 jobs")
+  .option("-u, --url <url>", "Daemon URL", "http://127.0.0.1:7799")
+  .option("--token <token>", "Bearer token (defaults to FLOWDOC_RUNNER_TOKEN env)")
+  .action(async (opts: any) => {
+    const { runnerStatus } = await import("./commands/runner-daemon.js");
+    await runnerStatus({ url: opts.url, token: opts.token ?? process.env.FLOWDOC_RUNNER_TOKEN });
+  });
+
 program
   .command("validate")
   .description("Lint scenarioTrees against the state graph — catch hallucinated steps that reference UI affordances that don't exist")
