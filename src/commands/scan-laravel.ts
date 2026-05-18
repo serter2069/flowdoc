@@ -8,7 +8,13 @@ interface ScanLaravelOpts {
 }
 
 const PUBLIC_HINT = /(home|landing|login|register|forgot|reset|booking|thank|cancel|success|public|out-of-service|signup|signin|property-lookup|zip)/i;
-const AUTH_HINT = /(login|signin|signup|register|forgot|reset|auth)/i;
+// Auth-flow (pre-auth) paths only. Bare "auth" substring used to over-match
+// post-login endpoints like /auth/me (the user-info call every authenticated
+// session hits on app load) and tag them anon, producing false-positive
+// role-boundary leaks from authenticated states. Now anchor to /auth/{login,
+// signin,signup,register,forgot,reset,password} so /auth/me, /auth/refresh,
+// /auth/logout, etc. fall through to the default "any" tag instead.
+const AUTH_HINT = /^\/?(login|signin|signup|register|forgot|reset)(\/|$)|\/auth\/(login|signin|signup|register|forgot|reset|password)(\/|$)/i;
 // Customer-facing routes: this is the FIRST page a real client lands on to
 // create a new booking. Tagged "client" so the scenario tree shows their flow
 // distinctly from anon-auth flows (login/reset).
