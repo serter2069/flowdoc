@@ -113,11 +113,16 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
   }
 
   // 2. Login → role home (one synthetic edge per authenticated role)
+  // Login → role-home synthetic edges. NOTE: "client" is deliberately
+  // excluded — clients are public customers who fill the booking funnel
+  // without ever authenticating. They reach their home via the separate
+  // root→client-home edge added in step 1b above. If we wired Login →
+  // client-home here, enumerate would emit "Anonymous root → Login → /booking"
+  // paths which are semantically wrong (clients never see Login).
   const HOME_HINTS: Record<string, RegExp> = {
     worker: /myappoint|^my schedule|dashboard|earnings/i,
     manager: /dashboard|bookings|companies/i,
     admin: /settings|verticals|companies|dashboard/i,
-    client: /publicbooking|landing|home/i,
     dispatcher: /dispatch|dashboard/i,
     any: /profile|settings|notifications|inbox/i,    // shared-role screens reached after login
   };
@@ -164,7 +169,14 @@ function inferRole(path: number[], stateByNum: Map<number, State>): string | und
       if (!NON_USER_ROLES.has(r)) roles.add(r);
     }
   }
-  if (roles.size === 0) return "anon";
+  // If the path passes through a Login screen, the user is authenticated by
+  // definition — never label the scenario "anon" in that case. Use "any" as
+  // the role-agnostic-but-logged-in tag.
+  const passesThroughLogin = path.some((n) => {
+    const s = stateByNum.get(n);
+    return s && (s.roles ?? []).includes("anon") && /login|signin/i.test(s.title);
+  });
+  if (roles.size === 0) return passesThroughLogin ? "any" : "anon";
   if (roles.size === 1) return [...roles][0];
   // Multiple — pick most specific (last user-role in path)
   for (let i = path.length - 1; i >= 0; i--) {

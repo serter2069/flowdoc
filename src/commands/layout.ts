@@ -81,15 +81,29 @@ export function layoutCommand(flowsArg: string, opts: LayoutOpts) {
   }
 
   // Wrap long columns into sub-columns so a fan-out column with 100 states
-  // doesn't become 14000px tall. Aim for ~16 rows max per sub-column.
+  // doesn't become 14000px tall. Aim for ~10 rows max per sub-column.
+  //
+  // ⚠ Previous bug: each column was placed at `col * COL_W` — a fixed offset.
+  // When column N expanded into 3 sub-columns, the 2nd and 3rd sub-columns
+  // bled into column N+1's space (sub-col-2 was at +SUB_COL_W = +432, but
+  // col N+1 started at +540 → only 108px gap, less than CARD_W=280). So cards
+  // overlapped horizontally between depth-bands.
+  //
+  // Fix: place each column at the END of the previous column's sub-columns
+  // plus a fixed gutter. `runningX` accumulates so column N+1 NEVER overlaps
+  // column N regardless of how many sub-columns column N needs.
   const MAX_PER_COL = 10;
-  // CARD_W = 220 in the viewer; sub-columns need ≥ 380 to leave 160px gap
-  const SUB_COL_W = Math.max(380, Math.round(opts.colW * 0.8));
+  // CARD_W = 280 in the viewer; sub-columns need at least CARD_W + 80 gap so
+  // edge labels have room and adjacent sub-col cards don't kiss.
+  const SUB_COL_W = Math.max(360, Math.round(opts.colW * 0.7));
+  const COL_GUTTER = 80;   // extra breathing room between depth-bands
   const positions = new Map<number, { x: number; y: number }>();
-  for (const [col, list] of byCol.entries()) {
+  let runningX = 0;
+  for (const col of [...byCol.keys()].sort((a, b) => a - b)) {
+    const list = byCol.get(col)!;
     const subCols = Math.ceil(list.length / MAX_PER_COL);
     const rowsPerSub = Math.ceil(list.length / subCols);
-    const baseX = col * opts.colW;
+    const baseX = runningX;
     const totalH = rowsPerSub * opts.rowH;
     const startY = -totalH / 2 + opts.rowH / 2;
     list.forEach((s, i) => {
@@ -100,6 +114,8 @@ export function layoutCommand(flowsArg: string, opts: LayoutOpts) {
         y: startY + rowInSub * opts.rowH,
       });
     });
+    // Advance runningX past this column's last sub-column + gutter
+    runningX = baseX + subCols * SUB_COL_W + COL_GUTTER;
   }
 
   // Normalize so all coordinates are positive (add a big padding so the graph
