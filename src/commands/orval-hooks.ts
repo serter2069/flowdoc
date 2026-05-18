@@ -51,6 +51,10 @@ export interface OrvalEndpoint {
 function walk(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
   for (const f of readdirSync(dir)) {
+    // Match scan-expo-router's walk: never recurse into noise dirs. Orval's
+    // own generated dir might contain a stub node_modules during local
+    // development, and re-walking it would balloon the file list 100x.
+    if (f === "node_modules" || f === "dist" || f === ".turbo" || f === ".next") continue;
     const fp = join(dir, f);
     const s = statSync(fp);
     if (s.isDirectory()) walk(fp, out);

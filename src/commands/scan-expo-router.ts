@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { extractActionsFromJsx } from "./jsx-actions.js";
 import { scanOrvalHooks, extractActionsFromOrvalHooks } from "./orval-hooks.js";
 import type { StateAction } from "../schema.js";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import type { FlowDoc, State, Transition } from "../schema.js";
 
 interface ScanExpoOpts {
@@ -211,25 +211,6 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
 
   const screens = readScreens(appRoot, orvalHookMap);
   if (!screens.length) { console.error(`No route files found in ${appRoot}`); process.exit(1); }
-
-  // Also fold in nav references from components/ + hooks/ — many Links live there
-  const extraNavByRoute = new Map<string, Set<string>>();
-  for (const dirName of ["components", "hooks", "contexts", "lib"]) {
-    const dir = join(root, dirName);
-    if (!existsSync(dir)) continue;
-    for (const f of walkFiles(dir, [".tsx", ".jsx", ".ts", ".js"])) {
-      const src = readFileSync(f, "utf8");
-      const targets = new Set<string>();
-      for (const m of src.matchAll(NAV_RE)) targets.add(normalizeNavTarget(m[1]));
-      for (const m of src.matchAll(NAV_PATHNAME_RE)) targets.add(normalizeNavTarget(m[1]));
-      for (const m of src.matchAll(LINK_HREF_RE)) targets.add(normalizeNavTarget(m[1]));
-      for (const m of src.matchAll(LINK_HREF_TPL_RE)) targets.add(normalizeNavTarget(m[1]));
-      if (!targets.size) continue;
-      // Components are shared; attach their nav refs as "from = home" cluster so they show as exits from the nav itself.
-      // Simpler: just remember they exist so we don't lose links — we'll add them as edges FROM nearest matching screen by import? Keep simple: skip cross-component for now (they're noise).
-    }
-  }
-  void extraNavByRoute;
 
   // Build map from route-key → screen id
   const routeToId = new Map<string, string>();
