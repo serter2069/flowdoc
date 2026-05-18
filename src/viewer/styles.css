@@ -1356,3 +1356,45 @@ body,
   min-width: 0;
 }
 .flowdoc-card-body > * { display: block; }
+
+/* Empty-state when every group is collapsed / every screen filtered out.
+   Overlays the React Flow canvas so the user immediately knows there is
+   something to un-collapse — not just an empty graph. */
+.sitemap-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 30;
+}
+.sitemap-empty-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 26px;
+  max-width: 380px;
+  text-align: center;
+  pointer-events: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+.sitemap-empty-card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sitemap-empty-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.sitemap-empty-card code {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}

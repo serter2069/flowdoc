@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FlowDoc, Screen } from "../schema";
 import { collectEdges } from "../schema";
 import { SitemapGraph } from "./components/SitemapGraph";
@@ -60,6 +60,26 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
   const clearSelection = useCallback(() => {
     setSelectedId(null);
   }, []);
+
+  // Esc closes the help modal first. SitemapGraph's own keydown handler also
+  // wires Esc → clearSelection, but a visible modal should always win and not
+  // require a click on the backdrop.
+  useEffect(() => {
+    if (!showHelp) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const t = e.target;
+      const isField =
+        t instanceof HTMLElement &&
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      if (isField) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShowHelp(false);
+    }
+    window.addEventListener("keydown", onKey, true); // capture phase, runs before SitemapGraph
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [showHelp]);
 
   return (
     <div className={`app ${tab === "matrix" ? "app-matrix" : ""} ${tab === "canvas" ? "app-canvas" : ""}`}>
