@@ -1,14 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { validateFlowDoc } from "../schema.js";
-import { expandScenarioTree, resolveRouteRefs, toCsv } from "./scenario-tree.js";
+import { expandScenarioTree, resolveRouteRefs, toCsv, toTestCases } from "./scenario-tree.js";
 
 interface ScenariosOpts {
   format: "csv" | "json";
   out: string;
   maxCombinationSize: number;
   treeId?: string;
+  platforms?: string[];        // ["web-desktop","web-mobile","ios","android"]
 }
+
+export const DEFAULT_PLATFORMS = ["web-desktop", "web-mobile", "ios", "android"];
 
 /**
  * Read scenarioTrees[] from flows.json, expand each via DFS into a flat list
@@ -46,15 +49,25 @@ export function scenariosCommand(flowsArg: string, opts: ScenariosOpts): void {
     }
   }
 
+  const platforms = opts.platforms && opts.platforms.length > 0 ? opts.platforms : [];
   const outPath = resolve(process.cwd(), opts.out);
   if (opts.format === "json") {
-    writeFileSync(outPath, JSON.stringify({ routes: ok }, null, 2) + "\n", "utf8");
+    if (platforms.length > 0) {
+      // Per-platform test-case shape: one entry per (route × platform), each
+      // with a completed/status field a downstream agent will fill in.
+      const cases = toTestCases(ok, states, platforms);
+      writeFileSync(outPath, JSON.stringify({ platforms, testCases: cases }, null, 2) + "\n", "utf8");
+      console.log(`  test cases: ${cases.length}  (${ok.length} routes × ${platforms.length} platforms)`);
+    } else {
+      writeFileSync(outPath, JSON.stringify({ routes: ok }, null, 2) + "\n", "utf8");
+    }
   } else {
-    writeFileSync(outPath, toCsv(ok, states), "utf8");
+    writeFileSync(outPath, toCsv(ok, states, platforms), "utf8");
   }
   console.log(`✓ expanded ${targets.length} tree(s) → ${ok.length} route(s) (${ok.reduce((n, r) => n + r.steps.length, 0)} steps)`);
   console.log(`  by kind: ${count(ok, (r) => r.kind)}`);
   console.log(`  by role: ${count(ok, (r) => r.role ?? "anon")}`);
+  if (platforms.length > 0) console.log(`  platforms: ${platforms.join(", ")}`);
   console.log(`  wrote ${opts.out}`);
 }
 

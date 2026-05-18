@@ -284,13 +284,19 @@ program
   .option("-o, --out <path>", "Output path", "scenarios-routes.csv")
   .option("--max-comb <n>", "Max combination size for branches (default 3)", (v) => parseInt(v, 10), 3)
   .option("--tree <id>", "Only expand the scenario tree with this id")
+  .option("--platforms <list>", "Comma-separated platforms to fan out per route (e.g. web-desktop,web-mobile,ios,android)")
+  .option("--all-platforms", "Shortcut for --platforms web-desktop,web-mobile,ios,android")
   .action(async (flowsArg: string | undefined, opts: any) => {
-    const { scenariosCommand } = await import("./commands/scenarios.js");
+    const { scenariosCommand, DEFAULT_PLATFORMS } = await import("./commands/scenarios.js");
+    const platforms = opts.allPlatforms
+      ? DEFAULT_PLATFORMS
+      : (opts.platforms ? String(opts.platforms).split(",").map((s) => s.trim()).filter(Boolean) : []);
     scenariosCommand(flowsArg ?? "flows.json", {
       format: opts.format === "json" ? "json" : "csv",
       out: opts.out,
       maxCombinationSize: opts.maxComb,
       treeId: opts.tree,
+      platforms,
     });
   });
 

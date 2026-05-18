@@ -196,22 +196,90 @@ export function resolveRouteRefs(routes: ScenarioRoute[], states: State[]): { ok
   return { ok, missing };
 }
 
-/** Render a flat CSV — one row per route × step. */
-export function toCsv(routes: ScenarioRoute[], states: State[]): string {
+/** Render a flat CSV — one row per route × step (optionally × platform). */
+export function toCsv(routes: ScenarioRoute[], states: State[], platforms: string[] = []): string {
   const byNum = new Map(states.map((s) => [s.num, s]));
   const rows: string[][] = [];
-  rows.push(["route_id", "tree_id", "title", "kind", "role", "step_no", "step", "state", "action", "expect", "as"]);
+  const platformList = platforms.length > 0 ? platforms : [""];
+  rows.push(["route_id", "tree_id", "title", "kind", "role", "platform", "step_no", "step", "state", "action", "expect", "as", "completed", "status", "notes"]);
   for (const r of routes) {
-    r.steps.forEach((s, i) => {
-      const state = s.stateRef !== undefined ? byNum.get(s.stateRef) : undefined;
-      const stateLabel = state ? `#${state.num} ${state.title}` : (s.stateId ?? "");
-      rows.push([
-        r.routeId, r.treeId, r.title, r.kind, r.role ?? "",
-        String(i + 1), s.step, stateLabel, s.action ?? "", s.expect ?? "", s.as ?? "",
-      ]);
-    });
+    for (const platform of platformList) {
+      r.steps.forEach((s, i) => {
+        const state = s.stateRef !== undefined ? byNum.get(s.stateRef) : undefined;
+        const stateLabel = state ? `#${state.num} ${state.title}` : (s.stateId ?? "");
+        rows.push([
+          r.routeId, r.treeId, r.title, r.kind, r.role ?? "", platform,
+          String(i + 1), s.step, stateLabel, s.action ?? "", s.expect ?? "", s.as ?? "",
+          "no", "", "",
+        ]);
+      });
+    }
   }
   return rows.map((row) => row.map(csvCell).join(",")).join("\n") + "\n";
+}
+
+/**
+ * Flatten routes into per-platform test cases. Each (route, platform) gets a
+ * unique test_case_id, a completed=false marker, and an empty status/notes
+ * field that downstream agents fill in. Output is the JSON shape that the
+ * agent contract expects: one entry per testable target.
+ */
+export function toTestCases(routes: ScenarioRoute[], states: State[], platforms: string[]): TestCase[] {
+  const byNum = new Map(states.map((s) => [s.num, s]));
+  const out: TestCase[] = [];
+  for (const r of routes) {
+    for (const platform of platforms) {
+      out.push({
+        testCaseId: `${r.routeId}__${platform}`,
+        routeId: r.routeId,
+        treeId: r.treeId,
+        title: r.title,
+        kind: r.kind,
+        role: r.role,
+        platform,
+        completed: false,
+        status: null,
+        notes: "",
+        steps: r.steps.map((s, i) => {
+          const state = s.stateRef !== undefined ? byNum.get(s.stateRef) : undefined;
+          return {
+            stepNo: i + 1,
+            step: s.step,
+            stateRef: s.stateRef,
+            statePath: state?.path,
+            stateTitle: state?.title,
+            action: s.action,
+            expect: s.expect,
+            as: s.as,
+          };
+        }),
+      });
+    }
+  }
+  return out;
+}
+
+export interface TestCase {
+  testCaseId: string;
+  routeId: string;
+  treeId: string;
+  title: string;
+  kind: string;
+  role?: string;
+  platform: string;
+  completed: boolean;
+  status: "pass" | "fail" | "blocked" | null;
+  notes: string;
+  steps: Array<{
+    stepNo: number;
+    step: string;
+    stateRef?: number;
+    statePath?: string;
+    stateTitle?: string;
+    action?: string;
+    expect?: string;
+    as?: string;
+  }>;
 }
 
 function csvCell(v: string): string {
