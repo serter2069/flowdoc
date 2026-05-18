@@ -221,20 +221,34 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   // Keyboard zoom: +/-, 0 = reset. Space-held = pan mode.
   const spaceDown = useRef(false);
   const spaceDragRef = useRef<{ startX: number; startY: number; origPanX: number; origPanY: number } | null>(null);
+  // Mirror fitToView through a ref so the keyboard handler — which is mounted
+  // once and never re-bound — always calls the LATEST version (with current
+  // positions/states). Without this, pressing `f` after dragging cards would
+  // fit to the original positions captured in the initial closure.
+  const fitToViewRef = useRef(() => {});
+  fitToViewRef.current = fitToView;
   useEffect(() => {
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || t.isContentEditable;
+    }
     function onKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement;
-      const inField = target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA");
+      const inField = isTypingTarget(e.target);
       if (!inField && e.code === "Space") {
         e.preventDefault();
         spaceDown.current = true;
         if (scrollRef.current) scrollRef.current.style.cursor = "grab";
       }
-      if (inField) return;
+      if (inField) {
+        // Inside a field, only Escape escapes — to blur back to the canvas.
+        if (e.key === "Escape") (e.target as HTMLElement).blur();
+        return;
+      }
       if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom((z) => Math.min(3, z * 1.25)); }
       else if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom((z) => Math.max(0.1, z / 1.25)); }
       else if (e.key === "0") { e.preventDefault(); setZoom(1); }
-      else if (e.key === "f") { e.preventDefault(); fitToView(); }
+      else if (e.key === "f") { e.preventDefault(); fitToViewRef.current(); }
     }
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") {
