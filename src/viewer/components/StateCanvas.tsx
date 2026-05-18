@@ -665,32 +665,47 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
               <marker id="arr-overlay-manager" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" /></marker>
               <marker id="arr-overlay-admin" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9333ea" /></marker>
             </defs>
-            {transitions.map((t, i) => {
-              const a = stateByNum[t.from], b = stateByNum[t.to];
-              if (!a || !b || !visible(a as State) || !visible(b as State)) return null;
-              const ap = { ...(positions[a.num] ?? defaultPositionFor(a as State)), w: CARD_W, h: CARD_H };
-              const bp = { ...(positions[b.num] ?? defaultPositionFor(b as State)), w: CARD_W, h: CARD_H };
-              const { d, mx, my } = bezierPath(ap, bp);
-              const edgeKey = `${t.from}→${t.to}`;
-              const inScen = edgesInScenario.has(edgeKey);
-              const multiColor = edgeColor.get(edgeKey);
-              const inOverlay = roleScenarioEdges.has(edgeKey);
-              // Synthetic edges (tab-bar / login-as / submit-booking) are scaffold,
-              // not real navigation — render faintly so the real graph reads clearly.
-              const isSynthetic = /^(tab-bar|login as|visit \/login|client lands|submit booking|manager sees)/.test(t.label ?? "");
-              const dimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
-              const cls = `${inScen ? "in-scenario" : t.fail ? "fail" : t.cond ? "cond" : ""} ${inOverlay ? `overlay-${overlayRole}` : ""} ${dimmed ? "dimmed" : ""} ${isSynthetic && !inScen && !inOverlay ? "synthetic" : ""}`.trim();
-              const marker = inOverlay ? `url(#arr-overlay-${overlayRole})` : inScen ? "url(#arr-blue)" : t.fail ? "url(#arr-red)" : t.cond ? "url(#arr-orange)" : "url(#arr)";
-              const label = (t.label || "") + (t.cond ? ` (${t.cond})` : "");
-              const shown = label.length > 40 ? label.slice(0, 38) + "…" : label;
-              const inlineStyle = multiColor ? { stroke: multiColor, strokeWidth: 2.5, opacity: 0.95 } : undefined;
-              return (
-                <g key={i} className={dimmed ? "edge-dimmed" : ""}>
-                  <path d={d} className={cls} markerEnd={marker} style={inlineStyle} />
-                  {label && !dimmed && <text x={mx} y={my - 4} textAnchor="middle" className={t.cond ? "cond" : ""}>{shown}</text>}
-                </g>
-              );
-            })}
+            {/*
+              SVG paints in DOM order. We want synthetic / dimmed edges to sit
+              UNDER real / highlighted edges so the latter read clearly even
+              when they cross over scaffold paths. Sort key:
+                0 = synthetic / dimmed (render first → bottom)
+                1 = normal real edge
+                2 = active-scenario / role-overlay (render last → top)
+            */}
+            {transitions
+              .map((t, i) => {
+                const isSynthetic = /^(tab-bar|login as|enter as |visit \/login|client lands|submit booking|manager sees)/.test(t.label ?? "");
+                const edgeKey = `${t.from}→${t.to}`;
+                const inScen = edgesInScenario.has(edgeKey);
+                const inOverlay = roleScenarioEdges.has(edgeKey);
+                const dimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
+                let layer = 1;
+                if (isSynthetic && !inScen && !inOverlay) layer = 0;
+                else if (dimmed) layer = 0;
+                else if (inScen || inOverlay) layer = 2;
+                return { t, i, isSynthetic, edgeKey, inScen, inOverlay, dimmed, layer };
+              })
+              .sort((a, b) => a.layer - b.layer)
+              .map(({ t, i, isSynthetic, edgeKey, inScen, inOverlay, dimmed }) => {
+                const a = stateByNum[t.from], b = stateByNum[t.to];
+                if (!a || !b || !visible(a as State) || !visible(b as State)) return null;
+                const ap = { ...(positions[a.num] ?? defaultPositionFor(a as State)), w: CARD_W, h: CARD_H };
+                const bp = { ...(positions[b.num] ?? defaultPositionFor(b as State)), w: CARD_W, h: CARD_H };
+                const { d, mx, my } = bezierPath(ap, bp);
+                const multiColor = edgeColor.get(edgeKey);
+                const cls = `${inScen ? "in-scenario" : t.fail ? "fail" : t.cond ? "cond" : ""} ${inOverlay ? `overlay-${overlayRole}` : ""} ${dimmed ? "dimmed" : ""} ${isSynthetic && !inScen && !inOverlay ? "synthetic" : ""}`.trim();
+                const marker = inOverlay ? `url(#arr-overlay-${overlayRole})` : inScen ? "url(#arr-blue)" : t.fail ? "url(#arr-red)" : t.cond ? "url(#arr-orange)" : "url(#arr)";
+                const label = (t.label || "") + (t.cond ? ` (${t.cond})` : "");
+                const shown = label.length > 40 ? label.slice(0, 38) + "…" : label;
+                const inlineStyle = multiColor ? { stroke: multiColor, strokeWidth: 2.5, opacity: 0.95 } : undefined;
+                return (
+                  <g key={i} className={dimmed ? "edge-dimmed" : ""}>
+                    <path d={d} className={cls} markerEnd={marker} style={inlineStyle} />
+                    {label && !dimmed && <text x={mx} y={my - 4} textAnchor="middle" className={t.cond ? "cond" : ""}>{shown}</text>}
+                  </g>
+                );
+              })}
           </svg>
 
           {states.filter(visible).map((s) => {
