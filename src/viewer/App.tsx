@@ -65,6 +65,22 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
     <div className={`app ${tab === "matrix" ? "app-matrix" : ""} ${tab === "canvas" ? "app-canvas" : ""}`}>
       <header className="topbar">
         <div className="title">
+          {typeof window !== "undefined" && window.location.hostname.includes("flowchart.smartlaunchhub") && (
+            <select
+              className="flowdoc-project-switcher"
+              defaultValue={window.location.pathname.split("/").filter(Boolean)[0] ?? ""}
+              onChange={(e) => {
+                const slug = e.target.value;
+                if (slug && slug !== window.location.pathname.split("/").filter(Boolean)[0]) {
+                  window.location.href = `/${slug}/`;
+                }
+              }}
+            >
+              <option value="pluto">Pluto</option>
+              <option value="aresgun">AresGun</option>
+              <option value="dressit">DressIT</option>
+            </select>
+          )}
           <h1>{data.title}</h1>
           {data.subtitle ? <span className="sub">{data.subtitle}</span> : null}
         </div>

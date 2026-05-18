@@ -85,6 +85,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const [selectedNums, setSelectedNums] = useState<Set<number>>(new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const marqueeRef = useRef<{ startWX: number; startWY: number; additive: boolean } | null>(null);
+  const [detailsNum, setDetailsNum] = useState<number | null>(null);
   const [activeScenarioIds, setActiveScenarioIds] = useState<Set<string>>(new Set());
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
@@ -632,8 +633,11 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
               const inScen = edgesInScenario.has(edgeKey);
               const multiColor = edgeColor.get(edgeKey);
               const inOverlay = roleScenarioEdges.has(edgeKey);
+              // Synthetic edges (tab-bar / login-as / submit-booking) are scaffold,
+              // not real navigation — render faintly so the real graph reads clearly.
+              const isSynthetic = /^(tab-bar|login as|visit \/login|client lands|submit booking|manager sees)/.test(t.label ?? "");
               const dimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
-              const cls = `${inScen ? "in-scenario" : t.fail ? "fail" : t.cond ? "cond" : ""} ${inOverlay ? `overlay-${overlayRole}` : ""} ${dimmed ? "dimmed" : ""}`.trim();
+              const cls = `${inScen ? "in-scenario" : t.fail ? "fail" : t.cond ? "cond" : ""} ${inOverlay ? `overlay-${overlayRole}` : ""} ${dimmed ? "dimmed" : ""} ${isSynthetic && !inScen && !inOverlay ? "synthetic" : ""}`.trim();
               const marker = inOverlay ? `url(#arr-overlay-${overlayRole})` : inScen ? "url(#arr-blue)" : t.fail ? "url(#arr-red)" : t.cond ? "url(#arr-orange)" : "url(#arr)";
               const label = (t.label || "") + (t.cond ? ` (${t.cond})` : "");
               const shown = label.length > 40 ? label.slice(0, 38) + "…" : label;
@@ -660,7 +664,8 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 className={`${cardClass(s.kind)} ${sel ? "selected" : ""} ${inScen ? "in-scenario" : ""} ${inOverlay ? `overlay-on overlay-${overlayRole}` : ""} ${cardDimmed ? "card-dimmed" : ""}`}
                 style={{ left: p.x, top: p.y }}
                 onMouseDown={(e) => startDrag(s.num, e)}
-                title={s.desc || s.title}
+                onDoubleClick={(e) => { e.stopPropagation(); setDetailsNum(s.num); }}
+                title={s.desc || `${s.title} — double-click for details`}
               >
                 <div className="flowdoc-card-rolebar" title={`Roles: ${(s.roles ?? ["any"]).join(", ")}`}>
                   {(s.roles ?? ["any"]).map((r) => (
@@ -767,6 +772,79 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
           <span className="flowdoc-seq-empty">— pick a scenario above or click a card —</span>
         )}
       </div>
+
+      {detailsNum != null && (() => {
+        const s = stateByNum[detailsNum];
+        if (!s) return null;
+        const incoming = transitions.filter((t) => t.to === detailsNum);
+        const outgoing = transitions.filter((t) => t.from === detailsNum);
+        const scenariosTouching = scenarios.filter((sc) => sc.path.includes(detailsNum));
+        return (
+          <div className="flowdoc-modal-backdrop" onClick={() => setDetailsNum(null)}>
+            <div className="flowdoc-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="flowdoc-modal-head">
+                <span className="flowdoc-modal-num">#{s.num}</span>
+                <span className="flowdoc-modal-kind">{s.kind.toUpperCase()}</span>
+                <span className="flowdoc-modal-title">{s.title}</span>
+                <button type="button" className="flowdoc-modal-close" onClick={() => setDetailsNum(null)}>✕</button>
+              </div>
+              <div className="flowdoc-modal-body">
+                {s.path && <div className="flowdoc-modal-row"><b>Path:</b> <code>{s.path}</code></div>}
+                {s.id && <div className="flowdoc-modal-row"><b>ID:</b> <code>{s.id}</code></div>}
+                {s.roles && s.roles.length > 0 && (
+                  <div className="flowdoc-modal-row"><b>Roles:</b> {s.roles.map((r) => (
+                    <span key={r} className={`flowdoc-role-stripe-${r}`} style={{ padding: "2px 8px", borderRadius: 4, marginRight: 4, fontSize: 11, fontWeight: 700 }}>{r}</span>
+                  ))}</div>
+                )}
+                {s.desc && <div className="flowdoc-modal-row"><b>Description:</b> {s.desc}</div>}
+                {(s as any).fields && (s as any).fields.length > 0 && (
+                  <div className="flowdoc-modal-row"><b>Fields:</b>
+                    <ul className="flowdoc-modal-list">{(s as any).fields.map((f: any, i: number) => <li key={i}>{f.name} <code>{f.type || ""}</code> {f.required ? "*" : ""}</li>)}</ul>
+                  </div>
+                )}
+                {s.actions && s.actions.length > 0 && (
+                  <div className="flowdoc-modal-row"><b>Actions:</b>
+                    <ul className="flowdoc-modal-list">{s.actions.map((a, i) => <li key={i}>{a.kind} → {a.target ?? ""} {a.allowedRoles ? `(roles: ${a.allowedRoles.join(",")})` : ""}</li>)}</ul>
+                  </div>
+                )}
+                <div className="flowdoc-modal-row">
+                  <b>Incoming ({incoming.length}):</b>
+                  {incoming.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
+                    <ul className="flowdoc-modal-list">
+                      {incoming.slice(0, 20).map((t, i) => {
+                        const from = stateByNum[t.from];
+                        return <li key={i}><button className="flowdoc-modal-jump" onClick={() => setDetailsNum(t.from)}>#{t.from} {from?.title}</button> <span style={{ color: "#64748b" }}>— {t.label || "(unlabeled)"}</span></li>;
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <div className="flowdoc-modal-row">
+                  <b>Outgoing ({outgoing.length}):</b>
+                  {outgoing.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
+                    <ul className="flowdoc-modal-list">
+                      {outgoing.slice(0, 20).map((t, i) => {
+                        const to = stateByNum[t.to];
+                        return <li key={i}><button className="flowdoc-modal-jump" onClick={() => setDetailsNum(t.to)}>#{t.to} {to?.title}</button> <span style={{ color: "#64748b" }}>— {t.label || "(unlabeled)"}</span></li>;
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <div className="flowdoc-modal-row">
+                  <b>Scenarios touching this state ({scenariosTouching.length}):</b>
+                  {scenariosTouching.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
+                    <ul className="flowdoc-modal-list">
+                      {scenariosTouching.slice(0, 10).map((sc) => (
+                        <li key={sc.id}><code style={{ color: "#475569" }}>{sc.id.toUpperCase()}</code> ({sc.role}) — {sc.title}</li>
+                      ))}
+                      {scenariosTouching.length > 10 && <li style={{ color: "#94a3b8" }}>… +{scenariosTouching.length - 10} more</li>}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -82,9 +82,9 @@ export function layoutCommand(flowsArg: string, opts: LayoutOpts) {
 
   // Wrap long columns into sub-columns so a fan-out column with 100 states
   // doesn't become 14000px tall. Aim for ~16 rows max per sub-column.
-  const MAX_PER_COL = 14;
-  // CARD_W = 220 in the viewer; sub-columns need ≥ 320 to leave 100px gap
-  const SUB_COL_W = Math.max(320, Math.round(opts.colW * 0.75));
+  const MAX_PER_COL = 10;
+  // CARD_W = 220 in the viewer; sub-columns need ≥ 380 to leave 160px gap
+  const SUB_COL_W = Math.max(380, Math.round(opts.colW * 0.8));
   const positions = new Map<number, { x: number; y: number }>();
   for (const [col, list] of byCol.entries()) {
     const subCols = Math.ceil(list.length / MAX_PER_COL);

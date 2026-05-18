@@ -247,7 +247,10 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
 
   // ─── Optional: backend API states from sibling api-server/src/routes ───
   let apiCount = 0;
+  let crossLinks = 0;
   const apiServerDir = resolve(root, "../api-server/src/routes");
+  // Map from a canonical path (e.g. "/posts/:id") → backend state num
+  const apiPathToNum = new Map<string, number>();
   if (existsSync(apiServerDir)) {
     const apiRoutes = scanExpressRoutes(apiServerDir);
     // Group by file (resource)
@@ -257,7 +260,7 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
       if (!byFile.has(k)) byFile.set(k, []);
       byFile.get(k)!.push(r);
     }
-    let backendCol = 5;
+    const backendCol = 5;
     let backendRow = 0;
     for (const [resource, routes] of byFile) {
       for (const r of routes) {
@@ -274,16 +277,67 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
           desc: `Express route in ${resource}.ts`,
         });
         idToNum.set(id, nextNum);
+        // Key by canonical path (normalize {var} placeholders + :id form)
+        const canonical = r.path.replace(/\{var\}/g, ":id");
+        apiPathToNum.set(canonical, nextNum);
         nextNum++;
         backendRow++;
         apiCount++;
+      }
+    }
+
+    // ─── Cross-stack edges: RN screen → backend API endpoint it calls ───
+    // Match each screen's apiCalls (collected from api.METHOD/fetch/axios) to
+    // a discovered Express route by canonical path. Wildcards on either side
+    // are treated as single-segment matches.
+    function matchApiCallToBackend(call: string): number | undefined {
+      const c = call.replace(/\{var\}/g, ":id").split("?")[0];
+      // Strip baseURL prefix if any (api client uses /api/v1 or just /)
+      const stripped = c.replace(/^\/api(\/v\d+)?/, "");
+      const candidates = [c, stripped, "/api" + stripped, "/api/v1" + stripped]
+        .filter((x) => x && x !== "/");
+      for (const v of candidates) {
+        if (apiPathToNum.has(v)) return apiPathToNum.get(v);
+        // segment-wildcard match
+        const vSegs = v.split("/");
+        for (const [p, num] of apiPathToNum) {
+          const pSegs = p.split("/");
+          if (pSegs.length !== vSegs.length) continue;
+          let ok = true;
+          for (let i = 0; i < pSegs.length; i++) {
+            const a = pSegs[i]; const b = vSegs[i];
+            if (a === b) continue;
+            if (a.startsWith(":") || b.startsWith(":")) continue;
+            ok = false; break;
+          }
+          if (ok) return num;
+        }
+      }
+      return undefined;
+    }
+
+    for (const s of screens) {
+      const fromNum = idToNum.get(s.id);
+      if (!fromNum) continue;
+      const seenEdges = new Set<number>();
+      for (const call of s.apiCalls) {
+        const toNum = matchApiCallToBackend(call);
+        if (!toNum || seenEdges.has(toNum)) continue;
+        seenEdges.add(toNum);
+        transitions.push({
+          from: fromNum,
+          to: toNum,
+          label: `API ${call.slice(0, 40)}`,
+          cond: "api",
+        });
+        crossLinks++;
       }
     }
   }
 
   const newDoc: FlowDoc = {
     title: basename(root) + " — Expo Router auto-scan",
-    subtitle: `${screens.length} screens · ${transitions.length} in-app navigations${apiCount ? ` · ${apiCount} backend API routes` : ""}`,
+    subtitle: `${screens.length} screens · ${transitions.length} transitions${apiCount ? ` · ${apiCount} backend API routes` : ""}${crossLinks ? ` (incl. ${crossLinks} cross-stack API edges)` : ""}`,
     roles: [
       { id: "anon", name: "Anonymous", color: "#64748b" },
       { id: "any", name: "Any visitor", color: "#0ea5e9" },
@@ -310,5 +364,5 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
 
   const outPath = resolve(process.cwd(), opts.out);
   writeFileSync(outPath, JSON.stringify(newDoc, null, 2) + "\n", "utf8");
-  console.log(`✓ wrote ${opts.out}: ${screens.length} screens, ${transitions.length} nav transitions${apiCount ? `, ${apiCount} API routes` : ""}`);
+  console.log(`✓ wrote ${opts.out}: ${screens.length} screens, ${transitions.length} transitions${apiCount ? `, ${apiCount} API routes` : ""}${crossLinks ? ` (${crossLinks} cross-stack)` : ""}`);
 }

@@ -292,6 +292,34 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
   }
   candidates.sort((a, b) => b.path.length - a.path.length);
 
+  // Prefix-prune: if a scenario's path is a strict prefix of a longer scenario's
+  // path, drop it — the longer one already covers it. e.g. testing 1→2→3→4→5
+  // makes separate tests for 1→2, 1→2→3, 1→2→3→4 redundant.
+  const candidatesByStart = new Map<number, Scenario[]>();
+  for (const c of candidates) {
+    const s = c.path[0];
+    if (!candidatesByStart.has(s)) candidatesByStart.set(s, []);
+    candidatesByStart.get(s)!.push(c);
+  }
+  const survivors: Scenario[] = [];
+  let pruned = 0;
+  for (const c of candidates) {
+    const peers = candidatesByStart.get(c.path[0]) ?? [];
+    const isPrefix = peers.some((p) => {
+      if (p === c) return false;
+      if (p.path.length <= c.path.length) return false;
+      for (let i = 0; i < c.path.length; i++) if (p.path[i] !== c.path[i]) return false;
+      return true;
+    });
+    if (isPrefix) pruned++;
+    else survivors.push(c);
+  }
+  if (pruned > 0) {
+    console.log(`  ↳ prefix-pruned ${pruned} scenarios (subsumed by longer paths covering same prefix)`);
+    candidates.length = 0;
+    candidates.push(...survivors);
+  }
+
   const lenStats = candidates.reduce((m, s) => { m.set(s.path.length, (m.get(s.path.length) ?? 0) + 1); return m; }, new Map<number, number>());
   console.log(`✓ enumerated ${paths.size} unique paths from ${entries.length} entry state(s)`);
   console.log(`  path length distribution: ${[...lenStats.entries()].sort((a, b) => a[0] - b[0]).map(([l, n]) => `${l}=${n}`).join(", ")}`);

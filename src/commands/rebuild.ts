@@ -29,7 +29,7 @@ export function rebuildCommand(flowsArg: string | undefined, opts: RebuildOpts) 
     });
     console.log("");
     console.log(`▶ layout (BFS tree from Anonymous root)`);
-    layoutCommand(flowsPath, { colW: 460, rowH: 200 });
+    layoutCommand(flowsPath, { colW: 540, rowH: 260 });
     console.log("");
   }
 
