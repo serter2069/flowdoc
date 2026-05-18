@@ -1,5 +1,22 @@
 import type { Control, StateParam } from "../schema.js";
 
+// Blank out JS/TS comments so regex-based scanning doesn't pick up
+// commented-out JSX. Preserve newline positions so offset-based heuristics
+// (e.g. the <Text> proximity check) aren't shifted vs the original source.
+// We do NOT strip string literals — they may legitimately carry JSX-looking
+// fragments (snapshot fixtures) but stripping them would also remove
+// placeholder/accessibilityLabel/accept attributes the scanner relies on.
+function stripComments(src: string): string {
+  // Block comments — replace inside with spaces but keep newlines.
+  src = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  // Comment-only line (ignore leading whitespace).
+  src = src.replace(/^[ \t]*\/\/[^\n]*$/gm, "");
+  // Trailing line comment: require whitespace before `//` so we don't eat
+  // `https://...` URLs inside string literals (preceded by `:`).
+  src = src.replace(/[ \t]+\/\/[^\n]*$/gm, "");
+  return src;
+}
+
 /**
  * Full-coverage interactive-element scanner.
  *
@@ -25,24 +42,33 @@ const TEXT_INPUT_RE   = /<TextInput\b([^>]*?)(\/>|>)/g;
 // blob via regex breaks on the first inner `>`. Cheap fix: just detect the
 // tag-name presence at an opening `<`. Excludes lowercase HTML tags by
 // requiring an uppercase first letter at the start of the tag-name.
-const PICKER_OPEN_RE = /<([A-Z]\w*(?:Picker|Select|Dropdown|Combobox|Listbox))\b/g;
+// `<CustomPicker>` matches; `<CustomPicker.Item>` does NOT (negative lookahead).
+const PICKER_OPEN_RE = /<([A-Z]\w*(?:Picker|Select|Dropdown|Combobox|Listbox))(?!\.Item)\b/g;
 // Native <Picker><Picker.Item label="…" value="…"/>…</Picker> — domain extraction
 // only works for paired Native-style Pickers. Custom components (CityFnsServicePicker
 // etc.) don't expose their domain via JSX children, so we just record their presence.
 const NATIVE_PICKER_RE = /<Picker\b([^>]*?)>([\s\S]*?)<\/Picker>/g;
-const PICKER_ITEM_RE  = /<(Picker\.Item|Picker.Item|Item)\b[^>]*?\b(?:label|value)\s*=\s*["'`]([^"'`]+)["'`]/g;
+// Match a Picker.Item tag opening. Inner attribute extraction happens below
+// with value-first preference — a Picker.Item commonly has both `label="Draft"`
+// and `value="draft"`; the wire/API value is what the test runner needs to
+// submit, the label is just for display.
+const PICKER_ITEM_OPEN_RE = /<(?:Picker\.Item|Item)\b([^>]*?)\/?>/g;
+const ITEM_VALUE_RE = /\bvalue\s*=\s*["'`]([^"'`]+)["'`]/;
+const ITEM_LABEL_RE = /\blabel\s*=\s*["'`]([^"'`]+)["'`]/;
 const SWITCH_RE       = /<Switch\b([^>]*?)(\/>|>)/g;
 const SLIDER_RE       = /<Slider\b([^>]*?)(\/>|>)/g;
 const SCROLL_RE       = /<(ScrollView|FlatList|SectionList|VirtualizedList)\b([^>]*?)(\/>|>)/g;
-const SUBMIT_BTN_RE   = /\b(handleSubmit|onSubmit|formik\.submitForm|form\.handleSubmit)\b/g;
+const SUBMIT_BTN_RE   = /\b(handleSubmit|onSubmit|formik\.submitForm|form\.handleSubmit)\b/;
 // Custom OTP component (project-specific names like OtpCodeInput, OTPInput, VerificationCodeInput, …)
 const OTP_COMPONENT_RE = /<(\w*Otp\w*|\w*OTP\w*|\w*VerificationCode\w*|\w*PinCode\w*)\b([^>]*?)(\/>|>)/g;
 
-const DOC_PICKER_IMPORT_RE = /\bfrom\s+["']expo-document-picker["']/g;
+// Import-presence and side-effect-presence checks use .test() only, so they
+// must NOT be /g (advances lastIndex → false on repeat scans).
+const DOC_PICKER_IMPORT_RE = /\bfrom\s+["']expo-document-picker["']/;
 const DOC_PICKER_CALL_RE = /\bDocumentPicker\s*\.\s*getDocumentAsync\s*\(\s*(\{[\s\S]*?\})?/g;
-const IMG_PICKER_IMPORT_RE = /\bfrom\s+["']expo-image-picker["']/g;
+const IMG_PICKER_IMPORT_RE = /\bfrom\s+["']expo-image-picker["']/;
 const IMG_PICKER_CALL_RE = /\bImagePicker\s*\.\s*(?:launchImageLibraryAsync|launchCameraAsync)\s*\(\s*(\{[\s\S]*?\})?/g;
-const FILE_SYSTEM_DL_RE = /\bFileSystem\s*\.\s*downloadAsync\s*\(/g;
+const FILE_SYSTEM_DL_RE = /\bFileSystem\s*\.\s*downloadAsync\s*\(/;
 const LINKING_OPEN_RE = /\bLinking\s*\.\s*openURL\s*\(\s*[`'"]([^`'"]+)[`'"]/g;
 
 const OTP_HINT_RE = /\b(otp|verification[_-]?code|verify[_-]?code|6[_-]?digit)\b/i;
@@ -65,9 +91,12 @@ function extractLabel(attrs: string, src: string, tagStart: number): string {
   if (a) return a[1].slice(0, 40);
   const p = PLACEHOLDER_RE.exec(attrs);
   if (p) return p[1].slice(0, 40);
-  // Try preceding <Text>label</Text>
-  const before = src.slice(Math.max(0, tagStart - 200), tagStart);
-  const t = /<Text[^>]*>\s*([A-ZА-Я][\w\s'.,()\-]{1,40})\s*<\/Text>\s*$/.exec(before);
+  // Try preceding <Text>label</Text>. Look back only 120 chars (one short JSX
+  // statement) and require the </Text> to be the immediately-preceding element
+  // (only whitespace allowed between </Text> and our tag — that's what `\s*$`
+  // enforces). Text content capped at 40 chars to avoid matching paragraph copy.
+  const before = src.slice(Math.max(0, tagStart - 120), tagStart);
+  const t = /<Text[^>]*>\s*([A-ZА-Я][\w\s'.,()\-?:!]{1,40})\s*<\/Text>\s*$/.exec(before);
   if (t) return t[1].trim().slice(0, 40);
   return "";
 }
@@ -109,6 +138,7 @@ function parseSearchParamType(literal: string): StateParam[] {
 }
 
 export function extractParamsFromPage(src: string): StateParam[] {
+  src = stripComments(src);
   const out: StateParam[] = [];
   for (const re of [LOCAL_PARAMS_RE, GLOBAL_PARAMS_RE]) {
     re.lastIndex = 0;
@@ -124,6 +154,7 @@ export function extractParamsFromPage(src: string): StateParam[] {
 }
 
 export function extractControlsFromJsx(src: string): Control[] {
+  src = stripComments(src);
   const controls: Control[] = [];
   const seen = new Set<string>();
   const push = (c: Control) => {
@@ -155,8 +186,13 @@ export function extractControlsFromJsx(src: string): Control[] {
     const inner = m[2];
     const label = extractLabel(attrs, src, m.index ?? 0);
     const domain: string[] = [];
-    for (const im of inner.matchAll(PICKER_ITEM_RE)) {
-      if (im[2] && !domain.includes(im[2])) domain.push(im[2]);
+    for (const im of inner.matchAll(PICKER_ITEM_OPEN_RE)) {
+      const itemAttrs = im[1] ?? "";
+      const v = ITEM_VALUE_RE.exec(itemAttrs);
+      const l = ITEM_LABEL_RE.exec(itemAttrs);
+      // Prefer value (wire value the runner submits) over label (display text).
+      const pick = v?.[1] ?? l?.[1];
+      if (pick && !domain.includes(pick)) domain.push(pick);
     }
     push({ kind: "select", label: label || "select", domain: domain.length ? domain : undefined });
   }
@@ -253,22 +289,60 @@ export function extractControlsFromJsx(src: string): Control[] {
  * Best-effort: doesn't follow imports across files, so the schema must be
  * defined in (or imported by name into) the same file as the route handler.
  */
-const Z_OBJECT_RE = /\bz\s*\.\s*object\s*\(\s*\{([\s\S]*?)\}\s*\)/g;
-const Z_FIELD_RE = /(\w+)\s*:\s*z\s*\.\s*([\w.()'",\s\[\]|]+)/g;
 const Z_ENUM_RE = /\bz\s*\.\s*enum\s*\(\s*\[\s*([\s\S]*?)\s*\]\s*\)/;
 const Z_LITERAL_RE = /\bz\s*\.\s*literal\s*\(\s*['"`]([^'"`]+)['"`]/g;
 const Z_STRING_TYPE_RE = /\bz\s*\.\s*(string|number|boolean|uuid|email|url|date)\b/;
 const Z_OPTIONAL_RE = /\.\s*optional\s*\(/;
 
+/**
+ * Find each top-level `z.object({...})` body by tracking brace depth. A regex
+ * with `\{[\s\S]*?\}` mismatches because z.object literals routinely contain
+ * inner braces (z.array, nested z.object, default values).
+ */
+function findZodObjectBodies(src: string): string[] {
+  const out: string[] = [];
+  const opens = [...src.matchAll(/\bz\s*\.\s*object\s*\(\s*\{/g)];
+  for (const m of opens) {
+    const start = (m.index ?? 0) + m[0].length;
+    let depth = 1;
+    let i = start;
+    while (i < src.length && depth > 0) {
+      const c = src[i++];
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+    }
+    if (depth === 0) out.push(src.slice(start, i - 1));
+  }
+  return out;
+}
+
+/** Split an object body by top-level commas (depth-aware over (), [], {}). */
+function splitTopLevelComma(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of body) {
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    if (ch === "," && depth === 0) { parts.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts;
+}
+
 export function extractParamsFromZodFile(src: string): StateParam[] {
+  src = stripComments(src);
   const out: StateParam[] = [];
-  for (const m of src.matchAll(Z_OBJECT_RE)) {
-    const body = m[1];
-    Z_FIELD_RE.lastIndex = 0;
-    let f: RegExpExecArray | null;
-    while ((f = Z_FIELD_RE.exec(body))) {
-      const name = f[1];
-      const rhs = f[2];
+  for (const body of findZodObjectBodies(src)) {
+    for (const field of splitTopLevelComma(body)) {
+      // Split on the FIRST top-level `:` so values containing `:` aren't broken.
+      const colon = field.indexOf(":");
+      if (colon < 0) continue;
+      const name = field.slice(0, colon).trim().replace(/^['"`]|['"`]$/g, "");
+      if (!/^\w+$/.test(name)) continue;
+      const rhs = field.slice(colon + 1);
+
       const enumMatch = Z_ENUM_RE.exec(rhs);
       if (enumMatch) {
         const values = [...enumMatch[1].matchAll(/['"`]([^'"`]+)['"`]/g)].map((m) => m[1]);
@@ -277,7 +351,6 @@ export function extractParamsFromZodFile(src: string): StateParam[] {
           continue;
         }
       }
-      // z.union([z.literal('a'), z.literal('b')])
       const literals = [...rhs.matchAll(Z_LITERAL_RE)].map((m) => m[1]);
       if (literals.length > 1) {
         out.push({ name, source: "body", type: "enum", values: literals, required: !Z_OPTIONAL_RE.test(rhs) });
@@ -307,6 +380,7 @@ const MULTER_ANY_RE = /\.\s*any\s*\(\s*\)/g;
 const RES_SENDFILE_RE = /\bres\s*\.\s*(?:sendFile|download)\s*\(/g;
 
 export function extractControlsFromExpressRouteFile(src: string): Control[] {
+  src = stripComments(src);
   const out: Control[] = [];
   for (const m of src.matchAll(MULTER_SINGLE_RE)) {
     out.push({ kind: "file", label: m[1] });

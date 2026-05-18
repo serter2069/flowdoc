@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
-import { validateFlowDoc, type OptionAssignment, type Scenario, type State, type Transition } from "../schema.js";
+import { validateFlowDoc, type Scenario, type State, type Transition } from "../schema.js";
+import { assignOptionCoverage } from "./option-coverage.js";
 
 interface EnumerateOpts {
   out?: string;
@@ -416,127 +417,25 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
     candidates.push(...minimalCover);
   }
 
-  // ─── Option-coverage: distribute control/param options across existing scenarios
+  // Option-coverage: distribute control/param options across existing scenarios
   // (NO cloning — each scenario gets ≤1 option per (state, target). Tuples that
-  //  can't fit are reported as coverage gaps; a downstream replay-runner cycles
-  //  options on its own. Goal: keep scenario count flat while still recording
-  //  which option each scenario should exercise.)
-  type Tuple = { stateNum: number; targetKey: string; target: OptionAssignment["target"]; option: string; label: string };
-  const tupleUniverse: Tuple[] = [];
-  for (const s of states) {
-    (s.controls ?? []).forEach((c, i) => {
-      if (c.domain && c.domain.length > 1) {
-        for (const o of c.domain) tupleUniverse.push({
-          stateNum: s.num,
-          targetKey: `c${i}`,
-          target: { kind: "control", idx: i },
-          option: o,
-          label: c.label || `control[${i}]`,
-        });
-      }
-    });
-    for (const p of s.params ?? []) {
-      if (p.values && p.values.length > 1) {
-        for (const v of p.values) tupleUniverse.push({
-          stateNum: s.num,
-          targetKey: `p:${p.name}`,
-          target: { kind: "param", name: p.name },
-          option: v,
-          label: p.name,
-        });
-      }
-    }
-  }
-
+  //  can't fit are coverage gaps; a downstream replay-runner cycles them.
+  //  Pure logic lives in option-coverage.ts so it's unit-testable.)
   const allScenarios: Scenario[] = [...kept, ...candidates];
-  const reachable = new Set<number>();
-  for (const s of allScenarios) for (const n of s.path) reachable.add(n);
-  const reachableTuples = tupleUniverse.filter((t) => reachable.has(t.stateNum));
-
-  if (reachableTuples.length > 0) {
-    // For each (stateNum, targetKey), list scenarios passing through stateNum
-    const carriersByStateTarget = new Map<string, Scenario[]>();
-    for (const t of reachableTuples) {
-      const key = `${t.stateNum}:${t.targetKey}`;
-      if (carriersByStateTarget.has(key)) continue;
-      const carriers = allScenarios.filter((s) => s.path.includes(t.stateNum));
-      // Prefer scenarios with shorter assignment lists first to spread coverage evenly.
-      carriersByStateTarget.set(key, carriers);
-    }
-
-    // Reset any pre-existing optionAssignments on auto-generated scenarios so reruns
-    // don't accumulate stale picks. Hand-written scenarios keep their assignments.
-    for (const s of allScenarios) {
-      if (s.tags?.includes("auto-generated") || s.tags?.includes("option-variant")) {
-        s.optionAssignments = [];
-      } else {
-        s.optionAssignments = s.optionAssignments ?? [];
+  const { assigned, gaps } = assignOptionCoverage(allScenarios, states);
+  if (assigned > 0 || gaps.length > 0) {
+    console.log(`  ↳ option-coverage: assigned ${assigned} (state, control/param, option) tuples across ${allScenarios.length} scenarios; ${gaps.length} gaps remain`);
+    if (gaps.length > 0) {
+      const byState = new Map<string, string[]>();
+      for (const g of gaps) {
+        const key = `#${g.stateNum} ${g.label}`;
+        if (!byState.has(key)) byState.set(key, []);
+        byState.get(key)!.push(g.option);
       }
-    }
-
-    const coveredTuples = new Set<string>();
-    function tk(t: Tuple) { return `${t.stateNum}:${t.targetKey}:${t.option}`; }
-    function hasAssignment(s: Scenario, stateNum: number, targetKey: string) {
-      return (s.optionAssignments ?? []).some((a) =>
-        a.stateNum === stateNum &&
-        ((a.target.kind === "control" && targetKey === `c${a.target.idx}`) ||
-         (a.target.kind === "param" && targetKey === `p:${a.target.name}`))
-      );
-    }
-
-    // Pre-seed coverage with existing hand-written assignments (won't be overwritten).
-    for (const s of allScenarios) {
-      for (const a of s.optionAssignments ?? []) {
-        const tkey = a.target.kind === "control" ? `c${a.target.idx}` : `p:${a.target.name}`;
-        coveredTuples.add(`${a.stateNum}:${tkey}:${a.option}`);
-      }
-    }
-
-    // Order tuples: tuples with FEWEST carriers first (hardest to place).
-    const byDifficulty = reachableTuples.slice().sort((a, b) => {
-      const ca = carriersByStateTarget.get(`${a.stateNum}:${a.targetKey}`)?.length ?? 0;
-      const cb = carriersByStateTarget.get(`${b.stateNum}:${b.targetKey}`)?.length ?? 0;
-      return ca - cb;
-    });
-
-    let assignedCount = 0;
-    const gaps: Tuple[] = [];
-    for (const t of byDifficulty) {
-      if (coveredTuples.has(tk(t))) continue;
-      const carriers = carriersByStateTarget.get(`${t.stateNum}:${t.targetKey}`) ?? [];
-      // Pick the carrier with the fewest current assignments → balanced distribution.
-      const candidate = carriers
-        .filter((s) => !hasAssignment(s, t.stateNum, t.targetKey))
-        .sort((a, b) => (a.optionAssignments?.length ?? 0) - (b.optionAssignments?.length ?? 0))[0];
-      if (!candidate) { gaps.push(t); continue; }
-      candidate.optionAssignments!.push({
-        stateNum: t.stateNum,
-        target: t.target,
-        option: t.option,
-      });
-      coveredTuples.add(tk(t));
-      assignedCount++;
-    }
-
-    if (assignedCount > 0 || gaps.length > 0) {
-      console.log(`  ↳ option-coverage: assigned ${assignedCount} (state, control/param, option) tuples across ${allScenarios.length} scenarios; ${gaps.length} gaps remain`);
-      if (gaps.length > 0) {
-        const byState = new Map<string, string[]>();
-        for (const g of gaps) {
-          const key = `#${g.stateNum} ${g.label}`;
-          if (!byState.has(key)) byState.set(key, []);
-          byState.get(key)!.push(g.option);
-        }
-        const lines = [...byState.entries()].slice(0, 5).map(([k, vs]) => `      • ${k}: ${vs.join(", ")}`);
-        console.log(`    coverage gaps (top ${lines.length}/${byState.size}):`);
-        for (const l of lines) console.log(l);
-        console.log(`    (these options aren't picked by any scenario — replay-runner should rotate them)`);
-      }
-    }
-
-    // Drop empty optionAssignments arrays so JSON stays clean
-    for (const s of allScenarios) {
-      if (!s.optionAssignments || s.optionAssignments.length === 0) delete (s as any).optionAssignments;
+      const lines = [...byState.entries()].slice(0, 5).map(([k, vs]) => `      • ${k}: ${vs.join(", ")}`);
+      console.log(`    coverage gaps (top ${lines.length}/${byState.size}):`);
+      for (const l of lines) console.log(l);
+      console.log(`    (these options aren't picked by any scenario — replay-runner should rotate them)`);
     }
   }
 

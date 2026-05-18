@@ -1035,15 +1035,15 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                   {scenariosTouching.length === 0 ? <span style={{ color: "#94a3b8" }}> — none —</span> : (
                     <ul className="flowdoc-modal-list">
                       {scenariosTouching.slice(0, 10).map((sc) => {
-                        const hereAssigns = ((sc as any).optionAssignments ?? []).filter((a: any) => a.stateNum === detailsNum);
+                        const hereAssigns = (sc.optionAssignments ?? []).filter((a) => a.stateNum === detailsNum);
                         return (
                           <li key={sc.id}>
                             <code style={{ color: "#475569" }}>{sc.id.toUpperCase()}</code> ({sc.role}) — {sc.title}
                             {hereAssigns.length > 0 && (
                               <div style={{ fontSize: 10, color: "#475569", marginLeft: 6, marginTop: 2 }}>
-                                exercises: {hereAssigns.map((a: any, i: number) => {
+                                exercises: {hereAssigns.map((a, i) => {
                                   const tgt = a.target.kind === "control"
-                                    ? ((s as any).controls?.[a.target.idx]?.label ?? `control[${a.target.idx}]`)
+                                    ? (s.controls?.[a.target.idx]?.label ?? `control[${a.target.idx}]`)
                                     : `param ${a.target.name}`;
                                   return <code key={i} style={{ background: "#f1f5f9", padding: "0 4px", borderRadius: 3, marginRight: 4 }}>{tgt}={a.option}</code>;
                                 })}

@@ -160,8 +160,9 @@ export function ScenariosSidebar({
                     const st = scenarioStatus(sc, runs);
                     const isOn = activeScenarioIds.has(sc.id);
                     const colorDot = isOn ? scenarioColor.get(sc.id) : null;
-                    const optCount = ((sc as any).optionAssignments ?? []).length;
-                    const optList = ((sc as any).optionAssignments ?? []).slice(0, 6).map((a: any) =>
+                    const assigns = sc.optionAssignments ?? [];
+                    const optCount = assigns.length;
+                    const optList = assigns.slice(0, 6).map((a) =>
                       `#${a.stateNum} ${a.target.kind === "control" ? `c[${a.target.idx}]` : a.target.name}=${a.option}`
                     ).join(" · ");
                     const tip = (sc.narrative ?? sc.title) + (optCount ? `\n\nOptions exercised (${optCount}):\n${optList}` : "");
