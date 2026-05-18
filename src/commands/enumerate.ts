@@ -142,19 +142,23 @@ function pathKey(path: number[]): string {
   return path.join("→");
 }
 
+// Pseudo-roles that aren't real user roles — used as state-kind markers only.
+// Scenarios should never be classified as one of these.
+const NON_USER_ROLES = new Set(["any", "anon", "api", "system", "backend"]);
+
 function inferRole(path: number[], stateByNum: Map<number, State>): string | undefined {
   const roles = new Set<string>();
   for (const n of path) {
     for (const r of stateByNum.get(n)?.roles ?? []) {
-      if (r !== "any" && r !== "anon") roles.add(r);
+      if (!NON_USER_ROLES.has(r)) roles.add(r);
     }
   }
   if (roles.size === 0) return "anon";
   if (roles.size === 1) return [...roles][0];
-  // Multiple — pick most specific (last non-anon role in path)
+  // Multiple — pick most specific (last user-role in path)
   for (let i = path.length - 1; i >= 0; i--) {
     for (const r of stateByNum.get(path[i])?.roles ?? []) {
-      if (r !== "any" && r !== "anon") return r;
+      if (!NON_USER_ROLES.has(r)) return r;
     }
   }
   return undefined;
