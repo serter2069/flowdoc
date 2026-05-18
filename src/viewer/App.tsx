@@ -104,6 +104,7 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
           )}
         </div>
         <div className="topbar-right">
+          <RebuildButton />
           <button
             type="button"
             className="kbd-help-btn"
@@ -226,5 +227,94 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+// ─── Rebuild-from-source button ──────────────────────────────
+// POSTs to /_rebuild/<project> on flowchart.smartlaunchhub.com, streams
+// log lines back via Server-Sent Events, reloads the page when done.
+function RebuildButton() {
+  const [state, setState] = useState<"idle" | "running" | "done" | "fail">("idle");
+  const [logs, setLogs] = useState<string[]>([]);
+  const [openLog, setOpenLog] = useState(false);
+
+  if (typeof window === "undefined") return null;
+  const onFlowchart = window.location.hostname.includes("flowchart.smartlaunchhub");
+  if (!onFlowchart) return null;
+
+  const slug = window.location.pathname.split("/").filter(Boolean)[0];
+  if (!slug) return null;
+
+  async function go() {
+    setState("running");
+    setLogs(["▶ POST /_rebuild/" + slug]);
+    setOpenLog(true);
+    try {
+      const res = await fetch(`/_rebuild/${slug}`, { method: "POST" });
+      if (!res.ok || !res.body) {
+        setLogs((l) => [...l, `✕ HTTP ${res.status}`]);
+        setState("fail");
+        return;
+      }
+      // Parse SSE stream manually (EventSource doesn't support POST)
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const ev = /^event: (\w+)/.exec(frame);
+          const data = /^data: (.*)$/m.exec(frame);
+          if (!ev || !data) continue;
+          let payload: any = {};
+          try { payload = JSON.parse(data[1]); } catch { /* */ }
+          if (ev[1] === "log" || ev[1] === "err") setLogs((l) => [...l, payload.line ?? ""]);
+          else if (ev[1] === "step") setLogs((l) => [...l, "─── " + payload.cmd]);
+          else if (ev[1] === "done") {
+            setLogs((l) => [...l, `✓ done in ${Math.round((payload.ms ?? 0) / 100) / 10}s — reloading…`]);
+            setState("done");
+            setTimeout(() => window.location.reload(), 1500);
+          } else if (ev[1] === "fail") {
+            setLogs((l) => [...l, "✕ " + JSON.stringify(payload)]);
+            setState("fail");
+          }
+        }
+      }
+    } catch (e: any) {
+      setLogs((l) => [...l, "✕ " + String(e)]);
+      setState("fail");
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`flowdoc-rebuild-btn ${state}`}
+        onClick={state === "idle" ? go : () => setOpenLog((v) => !v)}
+        title={state === "idle" ? `Re-scan + rebuild ${slug} from source` : "Show rebuild log"}
+        disabled={state === "running"}
+      >
+        {state === "idle" && `↻ Rebuild ${slug}`}
+        {state === "running" && `⟳ Rebuilding…`}
+        {state === "done" && `✓ Rebuilt`}
+        {state === "fail" && `✕ Failed (show log)`}
+      </button>
+      {openLog && (
+        <div className="flowdoc-rebuild-log-panel" onClick={() => setOpenLog(false)}>
+          <div className="flowdoc-rebuild-log" onClick={(e) => e.stopPropagation()}>
+            <div className="flowdoc-rebuild-log-head">
+              <b>Rebuild log · {slug}</b>
+              <button type="button" onClick={() => setOpenLog(false)}>✕</button>
+            </div>
+            <pre>{logs.join("\n")}</pre>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

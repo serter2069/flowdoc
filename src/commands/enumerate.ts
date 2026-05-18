@@ -42,15 +42,33 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
   const login = states.find((s) =>
     (s.roles ?? []).includes("anon") && /login|signin/i.test(s.title)
   );
-  if (!login) return [];
 
   const synthetic: Transition[] = [];
   const transitionsByPair = new Set(transitions.map((t) => `${t.from}→${t.to}`));
 
-  // 1. Anonymous root → Login (single canonical entry point)
-  const root = states.find((s) => /anonymous root/i.test(s.title))
-            ?? states.find((s) => (s.roles ?? []).includes("anon") && s.num === 1);
-  if (root && !transitionsByPair.has(`${root.num}→${login.num}`)) {
+  // 0. Synthesize an Anonymous root if the scanner didn't create one (e.g. expo-router scans).
+  //    Without it, enumerate has no DFS entry and produces zero scenarios.
+  let root = states.find((s) => /anonymous root/i.test(s.title));
+  if (!root) {
+    const maxNum = Math.max(0, ...states.map((s) => s.num));
+    root = { num: maxNum + 1000, id: "synthetic-anon-root", kind: "page", title: "Anonymous root", path: "/", roles: ["anon"] } as State;
+    states.push(root);
+    // Connect synthetic root to every plausible top-level state: anon-role pages
+    // OR states with no incoming. That covers RN apps (Login, public landings)
+    // and pure expo-router apps (index.tsx → reachable via root).
+    const incomingNums = new Set(transitions.map((t) => t.to));
+    for (const s of states) {
+      if (s.num === root.num) continue;
+      const isAnonRole = (s.roles ?? []).includes("anon");
+      const hasNoIncoming = !incomingNums.has(s.num);
+      const isLikelyRoot = /^(\/|index|home|root)$/i.test(s.title) || s.path === "/" || /^\/$/.test(s.path ?? "");
+      if (isAnonRole || hasNoIncoming || isLikelyRoot) {
+        transitions.push({ from: root.num, to: s.num, label: `visit ${s.title.slice(0, 30)}` });
+      }
+    }
+  }
+  // 1. Anonymous root → Login (single canonical entry point — if Login exists)
+  if (login && root && !transitionsByPair.has(`${root.num}→${login.num}`)) {
     synthetic.push({ from: root.num, to: login.num, label: "visit /login", cond: "anon" });
     transitionsByPair.add(`${root.num}→${login.num}`);
   }
@@ -96,9 +114,13 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
     const candidates = states.filter((s) => (s.roles ?? []).includes(role));
     if (candidates.length === 0) continue;
     const home = candidates.find((s) => hint.test(s.title)) ?? candidates[0];
-    const pair = `${login.num}→${home.num}`;
+    // If there's a Login, route through it (Login → home). Otherwise wire
+    // root → home directly (e.g. expo-router projects without explicit login).
+    const gate = login ?? root;
+    if (!gate) continue;
+    const pair = `${gate.num}→${home.num}`;
     if (!transitionsByPair.has(pair)) {
-      synthetic.push({ from: login.num, to: home.num, label: `login as ${role}`, cond: `role=${role}` });
+      synthetic.push({ from: gate.num, to: home.num, label: login ? `login as ${role}` : `enter as ${role}`, cond: `role=${role}` });
       transitionsByPair.add(pair);
     }
     // 3. Tab-bar synthetic edges: home screen of role → every other screen of

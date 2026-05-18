@@ -985,6 +985,40 @@ body,
 }
 .flowdoc-modal-jump:hover { background: #2563eb; color: #fff; }
 
+/* ── Rebuild-from-source button ───────────────────── */
+.flowdoc-rebuild-btn {
+  font-size: 11px; font-weight: 700; padding: 6px 12px;
+  border-radius: 6px; border: 1px solid #16a34a;
+  background: #dcfce7; color: #14532d; cursor: pointer;
+  margin-right: 8px;
+}
+.flowdoc-rebuild-btn:hover:not(:disabled) { background: #16a34a; color: #fff; }
+.flowdoc-rebuild-btn.running { background: #fef3c7; border-color: #d97706; color: #92400e; cursor: wait; }
+.flowdoc-rebuild-btn.done { background: #16a34a; color: #fff; border-color: #14532d; }
+.flowdoc-rebuild-btn.fail { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+.flowdoc-rebuild-log-panel {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.flowdoc-rebuild-log {
+  background: #0f172a; color: #e2e8f0; border-radius: 10px;
+  width: min(820px, 92vw); max-height: 70vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+}
+.flowdoc-rebuild-log-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: #1e293b; font-size: 12px;
+}
+.flowdoc-rebuild-log-head button {
+  background: transparent; border: 0; color: #cbd5e1; font-size: 16px; cursor: pointer;
+}
+.flowdoc-rebuild-log pre {
+  margin: 0; padding: 12px 14px; font-family: ui-monospace, monospace;
+  font-size: 11px; line-height: 1.5; overflow: auto; flex: 1;
+  white-space: pre-wrap; word-break: break-all;
+}
+
 /* ── Project switcher ─────────────────────────────── */
 .flowdoc-project-switcher {
   font-size: 11px; padding: 4px 8px; border-radius: 6px;
