@@ -453,8 +453,23 @@ function GraphInner({
     return () => window.removeEventListener("keydown", handler);
   }, [rf, onFocusSearch, onClearSelection]);
 
+  const allCollapsed = visibleScreenIds.size === 0 && screens.length > 0;
+
   return (
-    <ReactFlow
+    <>
+      {allCollapsed ? (
+        <div className="sitemap-empty-state">
+          <div className="sitemap-empty-card">
+            <h3>No screens visible</h3>
+            <p>
+              Every group is filtered out or collapsed. Re-expand a group in
+              the sidebar (click the <code>▾</code> chevron) or clear active
+              role / kind filters.
+            </p>
+          </div>
+        </div>
+      ) : null}
+      <ReactFlow
       nodes={nodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
@@ -504,6 +519,7 @@ function GraphInner({
         }}
       />
     </ReactFlow>
+    </>
   );
 }
 
