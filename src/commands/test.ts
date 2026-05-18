@@ -102,6 +102,55 @@ export function testReset(opts: CommonOpts & { platform?: string }): void {
   db.close();
 }
 
+/**
+ * Triage view — every fail/blocked test case with its notes and a one-line
+ * step preview, sorted by tree+route+platform so retrying happens predictably.
+ * Use case: "what broke after the last agent swarm pass?".
+ */
+export function testFailures(opts: CommonOpts & { platform?: string; includeBlocked?: boolean; format?: "table" | "json"; since?: string }): void {
+  const { db, project } = openCtx(opts);
+  const params: Record<string, unknown> = { project };
+  const filters: string[] = ["project = @project"];
+  if (opts.platform) { filters.push("platform = @platform"); params.platform = opts.platform; }
+  const statusFilter = opts.includeBlocked ? "status IN ('fail','blocked')" : "status = 'fail'";
+  filters.push(statusFilter);
+  if (opts.since) { filters.push("completed_at >= @since"); params.since = opts.since; }
+  const rows = db.prepare(`
+    SELECT * FROM test_cases
+    WHERE ${filters.join(" AND ")}
+    ORDER BY tree_id, route_id, platform
+  `).all(params) as Array<{ id: string; tree_id: string; route_id: string; platform: string; kind: string; role: string | null; status: string; notes: string; completed_at: string | null; steps_json: string; title: string }>;
+  if (opts.format === "json") {
+    const out = rows.map((r) => ({ ...r, steps_json: undefined, steps: JSON.parse(r.steps_json) }));
+    process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+    db.close();
+    return;
+  }
+  if (rows.length === 0) {
+    console.log(`No failures for project=${project}${opts.platform ? ` platform=${opts.platform}` : ""}${opts.since ? ` since=${opts.since}` : ""} ✓`);
+    db.close();
+    return;
+  }
+  console.log(`${rows.length} failed test case${rows.length === 1 ? "" : "s"} (project=${project})`);
+  console.log("");
+  for (const r of rows) {
+    const steps = JSON.parse(r.steps_json) as Array<{ stepNo: number; step: string; statePath?: string; expect?: string }>;
+    const tail = (r.title.split("·").pop() ?? r.title).trim();
+    console.log(`✗ ${r.id}`);
+    console.log(`  ${r.platform} · ${r.kind}/${r.role ?? "?"} · ${tail}`);
+    console.log(`  completed: ${r.completed_at ?? "(unknown)"}  status: ${r.status}`);
+    if (r.notes) console.log(`  notes: ${r.notes}`);
+    console.log(`  steps:`);
+    for (const s of steps.slice(0, 6)) {
+      console.log(`    ${s.stepNo}. ${s.step.slice(0, 70)}${s.statePath ? `  [${s.statePath}]` : ""}`);
+    }
+    if (steps.length > 6) console.log(`    …+${steps.length - 6} more steps`);
+    console.log("");
+  }
+  console.log(`Retry suggestion:  flowdoc test reset --project ${project}${opts.platform ? ` --platform ${opts.platform}` : ""}`);
+  db.close();
+}
+
 export function testStatus(opts: CommonOpts & { format?: "table" | "json" }): void {
   const { db, project } = openCtx(opts);
   const rows = coverage(db, project);

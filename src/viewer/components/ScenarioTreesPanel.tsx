@@ -15,6 +15,17 @@ const KIND_COLOR: Record<string, string> = {
   regression: "#9333ea",
 };
 
+function statusDot(s: string): string {
+  switch (s) {
+    case "pass":    return "✓";
+    case "fail":    return "✗";
+    case "blocked": return "⊘";
+    case "partial": return "◐";
+    case "pending":
+    default:        return "○";
+  }
+}
+
 export function ScenarioTreesPanel({ doc, activeRouteId, onActivateRoute }: Props) {
   const trees = doc.scenarioTrees ?? [];
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -94,16 +105,21 @@ export function ScenarioTreesPanel({ doc, activeRouteId, onActivateRoute }: Prop
                 <ul className="flowdoc-tree-routes">
                   {routes.map((r) => {
                     const isActive = activeRouteId === r.routeId;
-                    // Show only the unique tail after the last "·" — the tree
-                    // title is already implied by the parent group.
                     const tailLabel = r.title.split("·").pop()?.trim() ?? r.title;
+                    const statusEntry = (doc.routeStatus ?? []).find((rs) => rs.routeId === r.routeId);
+                    const summary = statusEntry?.summary ?? "pending";
+                    const perPlatformTooltip = statusEntry?.perPlatform
+                      .map((p) => `  ${p.platform.padEnd(12)}  ${p.status ?? "pending"}${p.notes ? ` — ${p.notes.slice(0, 60)}` : ""}`)
+                      .join("\n") ?? "no test runs yet — run `flowdoc test sync`";
+                    const tooltip = `${r.steps.map((s, i) => `${i + 1}. ${s.step}${s.expect ? `\n   ↳ ${s.expect}` : ""}`).join("\n")}\n\nTest status (${summary}):\n${perPlatformTooltip}`;
                     return (
                       <li
                         key={r.routeId}
-                        className={`flowdoc-tree-route ${isActive ? "active" : ""}`}
+                        className={`flowdoc-tree-route flowdoc-status-${summary} ${isActive ? "active" : ""}`}
                         onClick={() => onActivateRoute(isActive ? null : r)}
-                        title={r.steps.map((s, i) => `${i + 1}. ${s.step}${s.expect ? `\n   ↳ ${s.expect}` : ""}`).join("\n")}
+                        title={tooltip}
                       >
+                        <span className={`flowdoc-tree-route-status flowdoc-status-${summary}`} title={`status: ${summary}`}>{statusDot(summary)}</span>
                         <span className="flowdoc-tree-route-id">{r.routeId.split("-").pop()}</span>
                         <span className="flowdoc-tree-route-len">{r.steps.length}</span>
                         <span className="flowdoc-tree-route-label">{tailLabel}</span>

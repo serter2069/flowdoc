@@ -1425,6 +1425,35 @@ body,
   flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Test status badges on handwritten routes */
+.flowdoc-tree-route-status {
+  width: 16px; text-align: center; font-weight: 700; font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; flex: 0 0 auto;
+}
+.flowdoc-tree-route.flowdoc-status-pass    .flowdoc-tree-route-status { color: #16a34a; }
+.flowdoc-tree-route.flowdoc-status-fail    .flowdoc-tree-route-status { color: #dc2626; }
+.flowdoc-tree-route.flowdoc-status-blocked .flowdoc-tree-route-status { color: #ea580c; }
+.flowdoc-tree-route.flowdoc-status-partial .flowdoc-tree-route-status { color: #2563eb; }
+.flowdoc-tree-route.flowdoc-status-pending .flowdoc-tree-route-status { color: #cbd5e1; }
+/* Subtle left border on failed routes so they catch the eye */
+.flowdoc-tree-route.flowdoc-status-fail    { border-left: 2px solid #dc2626; padding-left: 24px; }
+.flowdoc-tree-route.flowdoc-status-blocked { border-left: 2px solid #ea580c; padding-left: 24px; }
+
+/* Synthetic route edges — handwritten scenario hops not in the auto-graph */
+.flowdoc-edges .route-synthetic-edge {
+  fill: none;
+  stroke: #c026d3;
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+  opacity: 0.9;
+}
+.flowdoc-edges .route-synthetic-label {
+  font-size: 10px;
+  fill: #86198f;
+  font-weight: 600;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+
 /* Sidebar option-pick badge */
 .flowdoc-sidebar-item-opts {
   margin-left: auto;

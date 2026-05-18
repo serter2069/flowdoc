@@ -23,6 +23,37 @@ export interface ScenarioRouteStep {
 }
 
 /**
+ * Drop routes whose step sequence is a strict prefix of another route's
+ * sequence — the longer route already exercises every step of the shorter
+ * one in order, so the shorter is redundant.
+ *
+ * Two steps are considered equivalent for prefix-comparison if they share
+ * the same (stateRef, action, step description). expect/notes are ignored.
+ *
+ * Cartesian branch combinations produce a lot of these by construction:
+ * the singleton subset {A} is always a prefix of {A,B} and {A,B,C}.
+ * Pruning collapses them down to the "do as many things as the agent can"
+ * top-level routes plus their unique sibling forks.
+ */
+export function prefixPruneRoutes(routes: ScenarioRoute[]): ScenarioRoute[] {
+  const key = (s: ScenarioRouteStep) => `${s.stateRef ?? s.stateId ?? "_"}|${s.action ?? ""}|${s.step}`;
+  const sigs = routes.map((r) => r.steps.map(key).join("→"));
+  const keep = new Array(routes.length).fill(true);
+  for (let i = 0; i < routes.length; i++) {
+    if (!keep[i]) continue;
+    for (let j = 0; j < routes.length; j++) {
+      if (i === j || !keep[j]) continue;
+      // route i is strict prefix of route j → drop i
+      if (sigs[j].length > sigs[i].length && sigs[j].startsWith(sigs[i] + "→")) {
+        keep[i] = false;
+        break;
+      }
+    }
+  }
+  return routes.filter((_, idx) => keep[idx]);
+}
+
+/**
  * Expand a scenario tree into every unique route.
  *
  *  - next      → sequential continuation (Array next = parallel forks)
@@ -40,7 +71,7 @@ export interface ScenarioRouteStep {
  */
 export function expandScenarioTree(
   tree: ScenarioTree,
-  opts: { maxCombinationSize?: number } = {},
+  opts: { maxCombinationSize?: number; noPrune?: boolean } = {},
 ): ScenarioRoute[] {
   const maxK = opts.maxCombinationSize ?? 3;
   const routes: ScenarioRoute[] = [];
@@ -146,7 +177,8 @@ export function expandScenarioTree(
   }
 
   walk(tree.tree, [], "");
-  return routes;
+  if (opts.noPrune) return routes;
+  return prefixPruneRoutes(routes);
 }
 
 /** Power-set (non-empty), capped at size maxK. Ordered by size asc. */

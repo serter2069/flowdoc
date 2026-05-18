@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { validateFlowDoc } from "../schema.js";
 
@@ -144,7 +144,53 @@ function loadRunsFromDb(dbPath: string): unknown {
   }
 }
 
-export function renderHtml(flowsJsonPath: string, runsDbPath?: string): string {
+/**
+ * Read test_cases from .flowdoc/flowdoc.db (if present) and aggregate into
+ * the per-route summary shape embedded in flows.json at build time. Pure
+ * read — no schema migration if the table doesn't exist yet, just returns [].
+ */
+function loadRouteStatusFromDb(dbPath: string): unknown[] {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    // table may not exist — fail silently to []
+    const hasTable = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='test_cases'`).get();
+    if (!hasTable) return [];
+    const rows = db.prepare(`
+      SELECT route_id AS routeId, platform, status, notes, completed_at AS completedAt
+      FROM test_cases
+    `).all() as Array<{ routeId: string; platform: string; status: string | null; notes: string; completedAt: string | null }>;
+    // Group by routeId
+    const byRoute = new Map<string, Array<{ platform: string; status: "pass" | "fail" | "blocked" | null; notes?: string; completedAt?: string }>>();
+    for (const r of rows) {
+      const arr = byRoute.get(r.routeId) ?? [];
+      arr.push({
+        platform: r.platform,
+        status: (r.status as "pass" | "fail" | "blocked" | null) ?? null,
+        notes: r.notes || undefined,
+        completedAt: r.completedAt ?? undefined,
+      });
+      byRoute.set(r.routeId, arr);
+    }
+    return [...byRoute.entries()].map(([routeId, perPlatform]) => ({
+      routeId, perPlatform, summary: summarize(perPlatform),
+    }));
+  } finally {
+    db.close();
+  }
+}
+
+function summarize(perPlatform: Array<{ status: "pass" | "fail" | "blocked" | null }>): "pass" | "fail" | "blocked" | "partial" | "pending" {
+  const has = (s: string) => perPlatform.some((p) => p.status === s);
+  const all = (s: string | null) => perPlatform.every((p) => p.status === s);
+  if (perPlatform.length === 0) return "pending";
+  if (has("fail")) return "fail";
+  if (has("blocked")) return "blocked";
+  if (all("pass")) return "pass";
+  if (all(null)) return "pending";
+  return "partial";
+}
+
+export function renderHtml(flowsJsonPath: string, runsDbPath?: string, testDbPath?: string): string {
   const raw = readFileSync(resolve(process.cwd(), flowsJsonPath), "utf8");
   let parsed: unknown;
   try {
@@ -153,6 +199,16 @@ export function renderHtml(flowsJsonPath: string, runsDbPath?: string): string {
     throw new Error(`${flowsJsonPath} is not valid JSON: ${(err as Error).message}`);
   }
   const doc = validateFlowDoc(parsed);
+  // Auto-detect .flowdoc/flowdoc.db next to flows.json. The same DB stores
+  // both baseline_runs (visual-diff) and test_cases (handwritten-route runs).
+  const flowsDir = dirname(resolve(process.cwd(), flowsJsonPath));
+  const autoDb = join(flowsDir, ".flowdoc", "flowdoc.db");
+  const dbForTests = testDbPath ? resolve(process.cwd(), testDbPath) : (existsSync(autoDb) ? autoDb : undefined);
+  if (dbForTests) {
+    const routeStatus = loadRouteStatusFromDb(dbForTests);
+    if (routeStatus.length > 0) (doc as { routeStatus?: unknown[] }).routeStatus = routeStatus;
+  }
+
   const template = loadViewerTemplate();
   const inlined = JSON.stringify(doc).replace(/</g, "\\u003c");
 
@@ -169,10 +225,10 @@ export function renderHtml(flowsJsonPath: string, runsDbPath?: string): string {
     .replace("__FLOWDOC_RUNS__", () => runsInlined);
 }
 
-export function buildCommand(flowsArg: string, opts: { out: string; withRuns?: string }) {
+export function buildCommand(flowsArg: string, opts: { out: string; withRuns?: string; withTestDb?: string }) {
   const flowsPath = flowsArg ?? "flows.json";
   const outPath = resolve(process.cwd(), opts.out);
-  const html = renderHtml(flowsPath, opts.withRuns);
+  const html = renderHtml(flowsPath, opts.withRuns, opts.withTestDb);
   writeFileSync(outPath, html, "utf8");
   const sizeKB = (html.length / 1024).toFixed(1);
   console.log(`✓ ${opts.out} (${sizeKB} KB)`);

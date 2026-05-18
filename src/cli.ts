@@ -306,6 +306,20 @@ test
   });
 
 test
+  .command("failures")
+  .description("Triage view — only fail (and optionally blocked) cases with notes and step preview")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name", "default")
+  .option("--platform <p>", "Filter by platform")
+  .option("--include-blocked", "Include blocked cases too", false)
+  .option("--since <iso>", "Only failures completed at or after this datetime")
+  .option("-f, --format <fmt>", "table | json", "table")
+  .action(async (opts: any) => {
+    const { testFailures } = await import("./commands/test.js");
+    testFailures({ dbPath: opts.db, project: opts.project, platform: opts.platform, includeBlocked: !!opts.includeBlocked, since: opts.since, format: opts.format });
+  });
+
+test
   .command("status")
   .description("Coverage matrix — per-platform × per-kind counts and % complete")
   .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")

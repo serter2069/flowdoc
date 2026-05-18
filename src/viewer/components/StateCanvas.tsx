@@ -845,6 +845,46 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                   </g>
                 );
               })}
+            {/*
+              Synthetic edges for the active handwritten route — a scenario
+              tree can claim "step #N follows step #M" without the auto-scanned
+              graph having a real transition between those states (e.g. nav
+              happens via a computed router.push the scanner can't resolve).
+              Without these the canvas shows two lit cards floating apart and
+              the user thinks "the cards aren't connected, did this break?".
+              We render the missing hops as a dashed magenta arrow with the
+              step label so the route is visually contiguous.
+            */}
+            {activeRoute && (() => {
+              const realPairs = new Set(transitions.map((t) => `${t.from}→${t.to}`));
+              const synthEdges: Array<{ from: number; to: number; label: string; key: string }> = [];
+              for (let i = 0; i < routeStateRefs.length - 1; i++) {
+                const from = routeStateRefs[i];
+                const to = routeStateRefs[i + 1];
+                if (from === to) continue;       // same-state step (sub-action) — no edge needed
+                const key = `${from}→${to}`;
+                if (realPairs.has(key)) continue;
+                const label = activeRoute.steps[i + 1]?.step ?? "";
+                synthEdges.push({ from, to, label, key });
+              }
+              return synthEdges.map(({ from, to, label, key }, i) => {
+                const a = stateByNum[from], b = stateByNum[to];
+                if (!a || !b) return null;
+                const ap = { ...(positions[a.num] ?? defaultPositionFor(a as State)), w: CARD_W, h: CARD_H };
+                const bp = { ...(positions[b.num] ?? defaultPositionFor(b as State)), w: CARD_W, h: CARD_H };
+                const { d, mx, my } = bezierPath(ap, bp);
+                const shown = label.length > 40 ? label.slice(0, 38) + "…" : label;
+                return (
+                  <g key={`syn-route-${i}-${key}`} className="route-synthetic">
+                    <path d={d} className="route-synthetic-edge" markerEnd="url(#arr-route)" />
+                    {label && <text x={mx} y={my - 4} textAnchor="middle" className="route-synthetic-label">{shown}</text>}
+                  </g>
+                );
+              });
+            })()}
+            <defs>
+              <marker id="arr-route" viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#c026d3" /></marker>
+            </defs>
           </svg>
 
           {states.filter(visible).map((s) => {

@@ -254,6 +254,18 @@ export const FlowDocSchema = z.object({
   transitions: z.array(TransitionSchema).optional(),
   scenarios: z.array(ScenarioSchema).optional(),
   scenarioTrees: z.array(ScenarioTreeSchema).optional(),    // handwritten intent trees
+  // Per-route × per-platform test results, embedded at build time from
+  // .flowdoc/flowdoc.db. Viewer renders badges + tooltip.
+  routeStatus: z.array(z.object({
+    routeId: z.string(),
+    summary: z.enum(["pass", "fail", "blocked", "partial", "pending"]),
+    perPlatform: z.array(z.object({
+      platform: z.string(),
+      status: z.enum(["pass", "fail", "blocked"]).nullable(),
+      notes: z.string().optional(),
+      completedAt: z.string().optional(),
+    })),
+  })).optional(),
 
   edges: z.array(EdgeSchema).optional(),
 }).refine((d) => (d.screens && d.screens.length) || (d.states && d.states.length), {
