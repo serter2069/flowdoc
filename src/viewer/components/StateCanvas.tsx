@@ -89,6 +89,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Single-active id derived from set (for legacy single-scenario UI like the sequence bar)
   const activeScenarioId = activeScenarioIds.size === 1 ? [...activeScenarioIds][0] : "";
@@ -120,43 +121,56 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Zoom: plain wheel = zoom (Figma/Miro style — canvas-first UX). Shift+wheel = pan.
-  // Trackpad pinch fires wheel with ctrlKey on Chrome/Safari — also handled as zoom.
-  // Two-finger trackpad scroll fires wheel with both deltaX and deltaY → treated as pan.
+  // Camera-based pan + zoom — same model as diagrams.love / Figma / reactflow.
+  // Container is overflow:hidden, we apply a single CSS transform
+  // `translate(pan.x, pan.y) scale(zoom)` to canvas-inner. ONE source of truth,
+  // no scrollbar race condition, no jitter.
+  //
+  //   Plain wheel        → zoom around cursor
+  //   Shift+wheel        → pan (horiz/vert via deltaX/deltaY)
+  //   Trackpad pinch     → zoom (browser fires wheel with ctrlKey for pinch)
+  //   Two-finger scroll  → pan (deltaX dominates OR shift held)
+  //   Space + drag       → pan
+  // Always-current refs so consecutive fast wheel events compound correctly
+  // without waiting for React to commit between them.
+  const zoomRef = useRef(zoom); zoomRef.current = zoom;
+  const panRef = useRef(pan); panRef.current = pan;
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     function onWheel(e: WheelEvent) {
-      if (!el) return;
+      e.preventDefault();
       const isPinch = e.ctrlKey || e.metaKey;
-      const isPanGesture = e.shiftKey || (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.3 && !isPinch);
+      const horizontalDominant = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.5;
+      const isPanGesture = e.shiftKey || (horizontalDominant && !isPinch);
       if (isPanGesture) {
-        // Let browser handle two-finger pan / shift-scroll → native scroll
+        const next = { x: panRef.current.x - e.deltaX, y: panRef.current.y - e.deltaY };
+        panRef.current = next;
+        setPan(next);
         return;
       }
-      // Plain wheel OR pinch → zoom around cursor
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
+      const rect = el!.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
-      const worldX = (el.scrollLeft + cx) / zoom;
-      const worldY = (el.scrollTop + cy) / zoom;
-      const factor = Math.exp(-e.deltaY * 0.0025);
-      const newZoom = Math.min(3, Math.max(0.1, zoom * factor));
+      const clampedDelta = Math.max(-50, Math.min(50, e.deltaY));
+      const factor = Math.exp(-clampedDelta * 0.0025);
+      const z0 = zoomRef.current;
+      const newZoom = Math.min(3, Math.max(0.1, z0 * factor));
+      const scale = newZoom / z0;
+      const p0 = panRef.current;
+      const newPan = { x: cx - (cx - p0.x) * scale, y: cy - (cy - p0.y) * scale };
+      zoomRef.current = newZoom;
+      panRef.current = newPan;
       setZoom(newZoom);
-      requestAnimationFrame(() => {
-        if (!el) return;
-        el.scrollLeft = worldX * newZoom - cx;
-        el.scrollTop = worldY * newZoom - cy;
-      });
+      setPan(newPan);
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [zoom]);
+  }, []);
 
   // Keyboard zoom: +/-, 0 = reset. Space-held = pan mode.
   const spaceDown = useRef(false);
-  const panRef = useRef<{ startX: number; startY: number; origScrollX: number; origScrollY: number } | null>(null);
+  const spaceDragRef = useRef<{ startX: number; startY: number; origPanX: number; origPanY: number } | null>(null);
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
@@ -196,22 +210,23 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
       const isMiddle = e.button === 1;
       if (!spaceDown.current && !isMiddle) return;
       e.preventDefault();
-      panRef.current = {
+      spaceDragRef.current = {
         startX: e.clientX, startY: e.clientY,
-        origScrollX: el.scrollLeft, origScrollY: el.scrollTop,
+        origPanX: panRef.current.x, origPanY: panRef.current.y,
       };
       el.style.cursor = "grabbing";
     }
     function onMouseMove(e: MouseEvent) {
-      if (!el || !panRef.current) return;
-      const dx = e.clientX - panRef.current.startX;
-      const dy = e.clientY - panRef.current.startY;
-      el.scrollLeft = panRef.current.origScrollX - dx;
-      el.scrollTop = panRef.current.origScrollY - dy;
+      if (!el || !spaceDragRef.current) return;
+      const dx = e.clientX - spaceDragRef.current.startX;
+      const dy = e.clientY - spaceDragRef.current.startY;
+      const next = { x: spaceDragRef.current.origPanX + dx, y: spaceDragRef.current.origPanY + dy };
+      panRef.current = next;
+      setPan(next);
     }
     function onMouseUp() {
       if (!el) return;
-      panRef.current = null;
+      spaceDragRef.current = null;
       el.style.cursor = spaceDown.current ? "grab" : "";
     }
     el.addEventListener("mousedown", onMouseDown);
@@ -250,18 +265,22 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
     }
     if (!isFinite(minX)) return;
     const graphW = maxX - minX, graphH = maxY - minY;
-    const fitW = (el.clientWidth - 60) / graphW;
-    const fitH = (el.clientHeight - 60) / graphH;
-    const z = Math.min(1.0, Math.max(0.2, Math.min(fitW, fitH)));
+    const fitW = (el.clientWidth - 80) / graphW;
+    const fitH = (el.clientHeight - 80) / graphH;
+    const z = Math.min(1.0, Math.max(0.1, Math.min(fitW, fitH)));
+    // Center the graph in the viewport via the camera (no scroll, no race).
+    //   We want world point (minX + graphW/2, minY + graphH/2) to land at the
+    //   viewport center. With transform translate(pan) scale(z), a world point
+    //   wx maps to screen x = wx * z + pan.x. Solve for pan:
+    //     pan.x = viewportCenterX - (minX + graphW/2) * z
+    const newPan = {
+      x: el.clientWidth / 2 - (minX + graphW / 2) * z,
+      y: el.clientHeight / 2 - (minY + graphH / 2) * z,
+    };
+    zoomRef.current = z;
+    panRef.current = newPan;
     setZoom(z);
-    requestAnimationFrame(() => {
-      if (!el) return;
-      // Center the graph inside the viewport
-      const centerX = (minX + graphW / 2) * z;
-      const centerY = (minY + graphH / 2) * z;
-      el.scrollLeft = centerX - el.clientWidth / 2;
-      el.scrollTop = centerY - el.clientHeight / 2;
-    });
+    setPan(newPan);
   }
 
   useEffect(() => {
@@ -288,8 +307,9 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
         const el = scrollRef.current;
         if (!el) return;
         const rect = el.getBoundingClientRect();
-        const wx = (el.scrollLeft + e.clientX - rect.left) / zoom;
-        const wy = (el.scrollTop + e.clientY - rect.top) / zoom;
+        // Screen→world: world = (screen - pan) / zoom
+        const wx = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+        const wy = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
         const { startWX, startWY } = marqueeRef.current;
         setMarquee({
           x: Math.min(startWX, wx),
@@ -385,8 +405,8 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
     const el = scrollRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const wx = (el.scrollLeft + e.clientX - rect.left) / zoom;
-    const wy = (el.scrollTop + e.clientY - rect.top) / zoom;
+    const wx = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+    const wy = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
     marqueeRef.current = { startWX: wx, startWY: wy, additive: e.shiftKey || e.metaKey || e.ctrlKey };
     setMarquee({ x: wx, y: wy, w: 0, h: 0 });
     if (!(e.shiftKey || e.metaKey || e.ctrlKey)) setSelectedNums(new Set());
@@ -561,17 +581,21 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
             scenarioColor={scenarioColor}
           />
         )}
-        <div className="flowdoc-canvas-scroll" ref={scrollRef}>
+        <div className="flowdoc-canvas-scroll" ref={scrollRef} style={{ overflow: "hidden", position: "relative" } as React.CSSProperties}>
         <div className="flowdoc-canvas" style={{
-          width: canvasSize.width * zoom,
-          height: canvasSize.height * zoom,
+          width: "100%",
+          height: "100%",
+          position: "absolute",
+          inset: 0,
         }}>
         <div className="flowdoc-canvas-inner" style={{
           width: canvasSize.width,
           height: canvasSize.height,
-          transform: `scale(${zoom})`,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: "0 0",
-          position: "relative",
+          position: "absolute",
+          left: 0, top: 0,
+          willChange: "transform",
         }} onMouseDown={startMarquee}>
           <svg className="flowdoc-edges" width={canvasSize.width} height={canvasSize.height}>
             <defs>
@@ -633,15 +657,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                   ))}
                 </div>
                 <div className="flowdoc-card-body">
-                <div
-                  className="flowdoc-card-num"
-                  style={{
-                    // Counter-scale at low zoom so the state number stays readable
-                    // even when the rest of the card is shrunk to thumbnail size.
-                    transform: zoom < 1 ? `scale(${Math.min(2.5, 1 / zoom)})` : undefined,
-                    transformOrigin: "top right",
-                  }}
-                >#{s.num}</div>
+                <div className="flowdoc-card-num">#{s.num}</div>
                 <div className="flowdoc-card-kind">{s.kind.toUpperCase()} <span className="flowdoc-card-glyph">{KIND_GLYPH[s.kind]}</span></div>
                 <div className="flowdoc-card-title">{s.title}</div>
                 {s.path && <div className="flowdoc-card-path">{s.path}</div>}
