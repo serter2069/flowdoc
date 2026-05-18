@@ -26,7 +26,14 @@ const NAV_RE = /\brouter\s*\.\s*(?:push|replace|navigate)\s*\(\s*['"`]([^'"`]+)[
 const NAV_PATHNAME_RE = /\brouter\s*\.\s*(?:push|replace|navigate)\s*\(\s*\{\s*pathname\s*:\s*['"`]([^'"`]+)['"`]/g;
 // <Link href="/foo"> or <Link href={`/listing/${id}`}>
 const LINK_HREF_RE = /<Link\s+[^>]*href\s*=\s*['"`]([^'"`{}]+)['"`]/g;
-const LINK_HREF_TPL_RE = /<Link\s+[^>]*href\s*=\s*\{`([^`$]+)/g;
+const LINK_HREF_TPL_RE = /<Link\s+[^>]*href\s*=\s*\{`([^`]+)`/g;
+// expo-router <Redirect href="/foo"/> — fires on mount, but the nav target is
+// just as real as a router.push. Same shape as <Link href=…>.
+const REDIRECT_HREF_RE = /<Redirect\s+[^>]*href\s*=\s*['"`]([^'"`{}]+)['"`]/g;
+const REDIRECT_HREF_TPL_RE = /<Redirect\s+[^>]*href\s*=\s*\{`([^`]+)`/g;
+// Edge case: href via TS-cast `href={"/x" as never}`. Match the string in `{"…"}`.
+const REDIRECT_HREF_CAST_RE = /<Redirect\s+[^>]*href\s*=\s*\{\s*['"`]([^'"`{}]+)['"`]/g;
+const LINK_HREF_CAST_RE = /<Link\s+[^>]*href\s*=\s*\{\s*['"`]([^'"`{}]+)['"`]/g;
 
 function walkFiles(dir: string, exts: string[], out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
@@ -64,7 +71,11 @@ function filePathToRoute(appRoot: string, file: string): string {
 
 function inferRoleFromRoute(route: string): string[] {
   const n = route.toLowerCase();
-  if (n.startsWith("/auth") || n.startsWith("/onboarding")) return ["anon"];
+  // Auth gates — these MUST be tagged anon so enumerate can find the login
+  // state and emit role-coherent scenarios for authenticated roles.
+  if (/^\/(auth|onboarding|login|signin|sign-in|signup|sign-up|register|otp|verify|reset-password|forgot-password)(\/|$)/.test(n)) return ["anon"];
+  // Public legal/landing pages — anon-only.
+  if (/^\/(terms|privacy|legal|about|contact|public|landing)(\/|$)/.test(n)) return ["anon"];
   if (n.startsWith("/admin")) return ["admin"];
   if (n.startsWith("/seller")) return ["seller"];
   if (n.startsWith("/my-listings") || n.startsWith("/new-listing") || n.startsWith("/listing-edit") || n.startsWith("/promote") || n.startsWith("/notifications") || n.startsWith("/settings") || n.startsWith("/recently-viewed")) return ["user"];
@@ -101,6 +112,25 @@ interface ExpoScreen {
   file: string;
 }
 
+/**
+ * Collect every navigation target found in a single page's JSX source.
+ * Exported so tests can exercise the regex set without spinning up the full
+ * scan. Output is normalized (template ${var} → :id, [id] → :id, query/hash
+ * stripped) so the result matches state route-keys downstream.
+ */
+export function extractNavTargets(src: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of src.matchAll(NAV_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(NAV_PATHNAME_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(LINK_HREF_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(LINK_HREF_TPL_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(LINK_HREF_CAST_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(REDIRECT_HREF_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(REDIRECT_HREF_TPL_RE)) out.add(normalizeNavTarget(m[1]));
+  for (const m of src.matchAll(REDIRECT_HREF_CAST_RE)) out.add(normalizeNavTarget(m[1]));
+  return out;
+}
+
 /** Normalize a navigation target: collapse template literals + dynamic segments. */
 function normalizeNavTarget(raw: string): string {
   let s = raw.split("?")[0].split("#")[0];
@@ -129,11 +159,7 @@ function readScreens(appRoot: string, orvalHookMap: Map<string, any>): ExpoScree
     const routeKey = routeKeyFromFileRoute(route);
     const src = readFileSync(file, "utf8");
 
-    const navTo = new Set<string>();
-    for (const m of src.matchAll(NAV_RE)) navTo.add(normalizeNavTarget(m[1]));
-    for (const m of src.matchAll(NAV_PATHNAME_RE)) navTo.add(normalizeNavTarget(m[1]));
-    for (const m of src.matchAll(LINK_HREF_RE)) navTo.add(normalizeNavTarget(m[1]));
-    for (const m of src.matchAll(LINK_HREF_TPL_RE)) navTo.add(normalizeNavTarget(m[1]));
+    const navTo = extractNavTargets(src);
 
     const apiCalls = extractApiUrls(src);
     // Merge JSX-extracted actions with orval react-query hook references.

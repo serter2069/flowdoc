@@ -3,6 +3,12 @@ import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { validateFlowDoc, type Scenario, type State, type Transition } from "../schema.js";
 import { assignOptionCoverage } from "./option-coverage.js";
+import {
+  inferScenarioRole,
+  pathHasRoleConflict,
+  isTrivialSitemapPath,
+  findRoleHomes,
+} from "./scenario-quality.js";
 
 interface EnumerateOpts {
   out?: string;
@@ -33,14 +39,12 @@ function isTerminal(state: State, outgoing: Transition[]): boolean {
 }
 
 function isAnonEntry(state: State, _incoming: Transition[]): boolean {
-  // True entry = the canonical Anonymous root (single source of truth).
-  // Every scenario MUST originate from here so the user-visible sequence reads:
-  //   Anonymous root → Login → (role-home) → app screens.
-  // Anon-accessible states like Login, Reset Password, public landings are NOT
-  // entries — they are reached from Anonymous root via real or synthetic edges.
+  // Canonical Anonymous root — kept as an entry so anon-only flows (login,
+  // reset password, public landings) still emit.
   if (/anonymous root/i.test(state.title)) return true;
   return false;
 }
+
 
 /**
  * Find a Login-ish anonymous entry state and the canonical "home" screen for
@@ -71,6 +75,10 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
     const incomingNums = new Set(transitions.map((t) => t.to));
     for (const s of states) {
       if (s.num === root.num) continue;
+      // API states are never first-class entries — they're reached via a page
+      // calling them. Hooking Anonymous root → API creates phantom length-2
+      // "anon makes API call from nowhere" scenarios.
+      if (s.kind === "api" || s.kind === "db" || s.kind === "webhook" || s.kind === "email" || s.kind === "push") continue;
       const isAnonRole = (s.roles ?? []).includes("anon");
       const hasNoIncoming = !incomingNums.has(s.num);
       const isLikelyRoot = /^(\/|index|home|root)$/i.test(s.title) || s.path === "/" || /^\/$/.test(s.path ?? "");
@@ -123,8 +131,10 @@ function synthesizeAuthGateTransitions(states: State[], transitions: Transition[
   const HOME_HINTS: Record<string, RegExp> = {
     worker: /myappoint|^my schedule|dashboard|earnings/i,
     manager: /dashboard|bookings|companies/i,
-    admin: /settings|verticals|companies|dashboard/i,
+    admin: /settings|verticals|companies|dashboard|moderation|users|complaints/i,
     dispatcher: /dispatch|dashboard/i,
+    user: /dashboard|home|my[- ]?(?:requests|listings|tasks)|feed|inbox/i,
+    seller: /seller|my[- ]?listings|dashboard/i,
     any: /profile|settings|notifications|inbox/i,    // shared-role screens reached after login
   };
   for (const [role, hint] of Object.entries(HOME_HINTS)) {
@@ -159,48 +169,50 @@ function pathKey(path: number[]): string {
   return path.join("→");
 }
 
-// Pseudo-roles that aren't real user roles — used as state-kind markers only.
-// Scenarios should never be classified as one of these.
-const NON_USER_ROLES = new Set(["any", "anon", "api", "system", "backend"]);
+// inferScenarioRole, pathHasRoleConflict, isTrivialSitemapPath, findRoleHomes,
+// NON_USER_ROLES — extracted to ./scenario-quality.ts so they're unit-testable.
 
 function inferRole(path: number[], stateByNum: Map<number, State>): string | undefined {
-  const roles = new Set<string>();
-  for (const n of path) {
-    for (const r of stateByNum.get(n)?.roles ?? []) {
-      if (!NON_USER_ROLES.has(r)) roles.add(r);
-    }
-  }
-  // If the path passes through a Login screen, the user is authenticated by
-  // definition — never label the scenario "anon" in that case. Use "any" as
-  // the role-agnostic-but-logged-in tag.
-  const passesThroughLogin = path.some((n) => {
-    const s = stateByNum.get(n);
-    return s && (s.roles ?? []).includes("anon") && /login|signin/i.test(s.title);
-  });
-  if (roles.size === 0) return passesThroughLogin ? "any" : "anon";
-  if (roles.size === 1) return [...roles][0];
-  // Multiple — pick most specific (last user-role in path)
-  for (let i = path.length - 1; i >= 0; i--) {
-    for (const r of stateByNum.get(path[i])?.roles ?? []) {
-      if (!NON_USER_ROLES.has(r)) return r;
-    }
-  }
-  return undefined;
+  return inferScenarioRole(path, stateByNum);
 }
 
 function inferTitle(path: number[], stateByNum: Map<number, State>): string {
-  const entry = stateByNum.get(path[0]);
-  const exit = stateByNum.get(path[path.length - 1]);
   const role = inferRole(path, stateByNum);
   const rolePrefix = role && role !== "anon" ? `${role.charAt(0).toUpperCase()}${role.slice(1)}: ` : "";
-  const fromTitle = entry?.title.split("(")[0].split("·")[0].trim() ?? `#${path[0]}`;
+  // Skip leading anon-only nodes for the display path. "User: Anonymous root
+  // → Settings" tells the reader nothing the role prefix doesn't already say.
+  // Walk forward while the current state is anon-only; stop at the first
+  // state that has any non-anon role (the actual journey start).
+  let startIdx = 0;
+  if (role && role !== "anon") {
+    while (startIdx < path.length - 1) {
+      const r = stateByNum.get(path[startIdx])?.roles ?? [];
+      const anonOnly = r.length > 0 && r.every((x) => x === "anon");
+      if (!anonOnly) break;
+      startIdx++;
+    }
+  }
+  const entry = stateByNum.get(path[startIdx]);
+  const exit = stateByNum.get(path[path.length - 1]);
+  const fromTitle = entry?.title.split("(")[0].split("·")[0].trim() ?? `#${path[startIdx]}`;
   const toTitle = exit?.title.split("(")[0].split("·")[0].trim() ?? `#${path[path.length - 1]}`;
+  if (startIdx === path.length - 1) return `${rolePrefix}${toTitle}`;
   return `${rolePrefix}${fromTitle} → ${toTitle}`;
 }
 
 function inferNarrative(path: number[], stateByNum: Map<number, State>, transitions: Transition[]): string {
+  const role = inferRole(path, stateByNum);
+  let startIdx = 0;
+  if (role && role !== "anon") {
+    while (startIdx < path.length - 1) {
+      const r = stateByNum.get(path[startIdx])?.roles ?? [];
+      const anonOnly = r.length > 0 && r.every((x) => x === "anon");
+      if (!anonOnly) break;
+      startIdx++;
+    }
+  }
   const parts: string[] = [];
-  for (let i = 0; i < path.length - 1; i++) {
+  for (let i = startIdx; i < path.length - 1; i++) {
     const a = stateByNum.get(path[i]);
     const b = stateByNum.get(path[i + 1]);
     const t = transitions.find((x) => x.from === path[i] && x.to === path[i + 1]);
@@ -248,7 +260,17 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
     incomingByNum.get(t.to)?.push(t);
   }
 
-  const entries = states.filter((s) => isAnonEntry(s, incomingByNum.get(s.num) ?? []));
+  const anonEntries = states.filter((s) => isAnonEntry(s, incomingByNum.get(s.num) ?? []));
+  const roleHomes = findRoleHomes(states, transitions);
+  const roleHomeStates = states.filter((s) => roleHomes.has(s.num));
+  const entries = [...anonEntries, ...roleHomeStates];
+  const entryRoleByNum = new Map<number, string>();
+  for (const s of anonEntries) entryRoleByNum.set(s.num, "anon");
+  for (const [num, role] of roleHomes) entryRoleByNum.set(num, role);
+  if (roleHomeStates.length > 0) {
+    const summary = [...new Set([...roleHomes.values()])].sort().join(", ");
+    console.log(`  + ${roleHomeStates.length} role-home entries (${summary}) — scenarios start role-coherent`);
+  }
   const paths = new Map<string, number[]>();   // dedup by pathKey
 
   function dfs(num: number, path: number[], visited: Set<number>, depth: number) {
@@ -341,6 +363,27 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
     });
   }
   candidates.sort((a, b) => b.path.length - a.path.length);
+
+  // ─── Quality gate: drop scenarios that aren't actual journeys ───
+  // 1) Role-mismatch — anon-rooted path ending on admin-only page is a graph
+  //    artifact from synthetic auth-gate edges, not a real flow.
+  // 2) Trivial sitemap — length-2 "visit /page" with no actions on the page
+  //    and only a synthetic edge in between. Test runners can't do anything
+  //    with these; they pollute the canvas.
+  let qualityDropped = 0;
+  const qualityKept: Scenario[] = [];
+  const dropReasons = { roleMismatch: 0, trivialSitemap: 0 };
+  for (const c of candidates) {
+    const role = c.role ?? "anon";
+    if (pathHasRoleConflict(c.path, role, stateByNum)) { qualityDropped++; dropReasons.roleMismatch++; continue; }
+    if (isTrivialSitemapPath(c.path, stateByNum, transitions)) { qualityDropped++; dropReasons.trivialSitemap++; continue; }
+    qualityKept.push(c);
+  }
+  if (qualityDropped > 0) {
+    console.log(`  ↳ quality-filtered ${qualityDropped} scenarios (role-mismatch: ${dropReasons.roleMismatch}, trivial-sitemap: ${dropReasons.trivialSitemap})`);
+    candidates.length = 0;
+    candidates.push(...qualityKept);
+  }
 
   // Prefix-prune: if a scenario's path is a strict prefix of a longer scenario's
   // path, drop it — the longer one already covers it. e.g. testing 1→2→3→4→5
