@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { extractActionsFromJsx } from "./jsx-actions.js";
+import { scanOrvalHooks, extractActionsFromOrvalHooks } from "./orval-hooks.js";
 import type { StateAction } from "../schema.js";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { FlowDoc, State, Transition } from "../schema.js";
@@ -106,7 +107,7 @@ function routeKeyFromFileRoute(route: string): string {
   return normalizeNavTarget(route);
 }
 
-function readScreens(appRoot: string): ExpoScreen[] {
+function readScreens(appRoot: string, orvalHookMap: Map<string, any>): ExpoScreen[] {
   const files = walkFiles(appRoot, [".tsx", ".jsx"]);
   const screens: ExpoScreen[] = [];
   for (const file of files) {
@@ -126,7 +127,18 @@ function readScreens(appRoot: string): ExpoScreen[] {
     for (const m of src.matchAll(LINK_HREF_TPL_RE)) navTo.add(normalizeNavTarget(m[1]));
 
     const apiCalls = extractApiUrls(src);
-    const actions = extractActionsFromJsx(src);
+    // Merge JSX-extracted actions with orval react-query hook references.
+    // Dedupe by (kind, expect) so the same endpoint reached two ways shows once.
+    const jsxActions = extractActionsFromJsx(src);
+    const hookActions = extractActionsFromOrvalHooks(src, orvalHookMap);
+    const seen = new Set<string>();
+    const actions: StateAction[] = [];
+    for (const a of [...jsxActions, ...hookActions]) {
+      const key = `${a.kind}:${a.expect ?? a.target}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      actions.push(a);
+    }
 
     const idBase = route === "/" ? "home" : route.replace(/^\//, "").replace(/[\/\[\]]/g, "-");
     screens.push({
@@ -184,7 +196,20 @@ export function scanExpoCommand(rootArg: string | undefined, opts: ScanExpoOpts)
   }
   if (!appRoot) { console.error(`No app/ directory found under ${root}. Looked at: ${candidates.join(", ")}`); process.exit(1); }
 
-  const screens = readScreens(appRoot);
+  // Look for sibling orval-generated react-query hooks so we can attribute
+  // mutations (useDeleteFavorite, claim.mutateAsync, …) to screens.
+  // Typical pnpm-workspace layout: artifacts/dressdrop/  →  ../../lib/api-client-react
+  const orvalCandidates = [
+    resolve(root, "../../lib/api-client-react/src/generated"),
+    resolve(root, "../lib/api-client-react/src/generated"),
+    resolve(root, "../api-client-react/src/generated"),
+  ];
+  let orvalHookMap = new Map<string, any>();
+  for (const c of orvalCandidates) {
+    if (existsSync(c)) { orvalHookMap = scanOrvalHooks(c); console.log(`  + orval hooks resolved: ${orvalHookMap.size / 2} endpoints from ${c}`); break; }
+  }
+
+  const screens = readScreens(appRoot, orvalHookMap);
   if (!screens.length) { console.error(`No route files found in ${appRoot}`); process.exit(1); }
 
   // Also fold in nav references from components/ + hooks/ — many Links live there
