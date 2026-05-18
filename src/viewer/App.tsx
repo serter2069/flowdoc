@@ -6,9 +6,10 @@ import { SitemapSidebar } from "./components/SitemapSidebar";
 import { SitemapDetail } from "./components/SitemapDetail";
 import { CoverageMatrix } from "./components/CoverageMatrix";
 import { StateCanvas } from "./components/StateCanvas";
+import { TestsPage } from "./components/TestsPage";
 import type { RunsData } from "./runs";
 
-type ViewTab = "graph" | "matrix" | "canvas";
+type ViewTab = "graph" | "matrix" | "canvas" | "tests";
 
 export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
   const hasStates = !!(data.states && data.states.length);
@@ -82,7 +83,7 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
   }, [showHelp]);
 
   return (
-    <div className={`app ${tab === "matrix" ? "app-matrix" : ""} ${tab === "canvas" ? "app-canvas" : ""}`}>
+    <div className={`app ${tab === "matrix" ? "app-matrix" : ""} ${tab === "canvas" || tab === "tests" ? "app-canvas" : ""}`}>
       <header className="topbar">
         <div className="title">
           {typeof window !== "undefined" && window.location.hostname.includes("flowchart.smartlaunchhub") && (
@@ -121,6 +122,12 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
             <button type="button" className={`tab ${tab === "matrix" ? "on" : ""}`} onClick={() => setTab("matrix")}>
               ▦ Coverage matrix
               {runs.runs.length ? <span className="tab-count">{runs.runs.length} runs</span> : null}
+            </button>
+          )}
+          {(data.scenarioTrees?.length ?? 0) > 0 && (
+            <button type="button" className={`tab ${tab === "tests" ? "on" : ""}`} onClick={() => setTab("tests")}>
+              ✓ Tests
+              <span className="tab-count">{data.scenarioTrees?.length ?? 0}</span>
             </button>
           )}
         </div>
@@ -191,6 +198,10 @@ export function App({ data, runs }: { data: FlowDoc; runs: RunsData }) {
       ) : tab === "matrix" ? (
         <main className="canvas canvas-matrix">
           <CoverageMatrix screens={screens} runs={runs} />
+        </main>
+      ) : tab === "tests" ? (
+        <main className="canvas canvas-fullbleed">
+          <TestsPage doc={data} />
         </main>
       ) : (
         <main className="canvas canvas-fullbleed">

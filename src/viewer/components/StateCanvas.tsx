@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FlowDoc, State, StateKind } from "../../schema";
 import type { RunsData, RunStatus } from "../runs";
-import { ScenariosSidebar } from "./ScenariosList";
 import { ScenarioTreesPanel } from "./ScenarioTreesPanel";
-import { TestsPanel } from "./TestsPanel";
 import type { ScenarioRoute } from "../../commands/scenario-tree";
 
 const KIND_GLYPH: Record<StateKind, string> = {
@@ -177,8 +175,8 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const [activeRoute, setActiveRoute] = useState<ScenarioRoute | null>(null);
   // Sidebar tab — start on "handwritten" if scenarioTrees exist; otherwise the
   // auto-scenarios tab is the only useful view.
-  const initialTab: "handwritten" | "auto" | "tests" = (doc.scenarioTrees ?? []).length > 0 ? "handwritten" : "auto";
-  const [sidebarTab, setSidebarTab] = useState<"handwritten" | "auto" | "tests">(initialTab);
+  // Canvas sidebar only shows handwritten scenarios. Auto-scenarios are
+  // dropped (no automated runner) and Tests has moved to its own top-level page.
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -187,56 +185,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   // Single-active id derived from set (for legacy single-scenario UI like the sequence bar)
   const activeScenarioId = activeScenarioIds.size === 1 ? [...activeScenarioIds][0] : "";
 
-  function toggleScenario(id: string, additive: boolean) {
-    let nextIds: Set<string>;
-    setActiveScenarioIds((prev) => {
-      if (id === "") { nextIds = new Set(); return new Set(); }
-      if (!additive) {
-        if (prev.size === 1 && prev.has(id)) { nextIds = new Set(); return new Set(); }
-        nextIds = new Set([id]);
-        return nextIds;
-      }
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      nextIds = next;
-      return next;
-    });
-    setOverlayRole(null);
-    // "Straighten up" — auto-fit camera to the union of selected scenarios'
-    // paths so the user sees the full chain at maximum legibility.
-    setTimeout(() => fitToScenarios(nextIds), 80);
-  }
 
-  function fitToScenarios(ids: Set<string>) {
-    if (ids.size === 0) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    const nums = new Set<number>();
-    for (const sc of scenarios) if (ids.has(sc.id)) for (const n of sc.path) nums.add(n);
-    if (nums.size === 0) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of nums) {
-      const p = positions[n] ?? defaultPositionFor(states.find((s) => s.num === n)!);
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x + CARD_W);
-      maxY = Math.max(maxY, p.y + CARD_H);
-    }
-    if (!isFinite(minX)) return;
-    const w = maxX - minX, h = maxY - minY;
-    const fitW = (el.clientWidth - 120) / w;
-    const fitH = (el.clientHeight - 120) / h;
-    const z = Math.min(1.2, Math.max(0.15, Math.min(fitW, fitH)));
-    const newPan = {
-      x: el.clientWidth / 2 - (minX + w / 2) * z,
-      y: el.clientHeight / 2 - (minY + h / 2) * z,
-    };
-    zoomRef.current = z;
-    panRef.current = newPan;
-    setZoom(z);
-    setPan(newPan);
-  }
 
   // Drag state
   // dragRef.origPositions = snapshot of every selected card's start position
@@ -738,52 +687,15 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
 
       <div className="flowdoc-canvas-body">
         {sidebarOpen && (
-          <div className={`flowdoc-sidebar-wrap ${sidebarTab === "tests" ? "wide" : ""}`}>
-            <div className="flowdoc-sidebar-tabs">
-              <button
-                className={`flowdoc-sidebar-tab ${sidebarTab === "handwritten" ? "active" : ""}`}
-                onClick={() => setSidebarTab("handwritten")}
-              >
-                Handwritten
-                <span className="flowdoc-sidebar-tab-count">{(doc.scenarioTrees ?? []).length}</span>
-              </button>
-              <button
-                className={`flowdoc-sidebar-tab ${sidebarTab === "auto" ? "active" : ""}`}
-                onClick={() => setSidebarTab("auto")}
-              >
-                Auto
-                <span className="flowdoc-sidebar-tab-count">{(doc.scenarios ?? []).length}</span>
-              </button>
-              <button
-                className={`flowdoc-sidebar-tab ${sidebarTab === "tests" ? "active" : ""}`}
-                onClick={() => setSidebarTab("tests")}
-              >
-                Tests
-                <span className="flowdoc-sidebar-tab-count">{(doc.routeStatus ?? []).length || (doc.scenarioTrees ?? []).length}</span>
-              </button>
-            </div>
-            {sidebarTab === "handwritten" ? (
-              <ScenarioTreesPanel
-                doc={doc}
-                activeRouteId={activeRoute?.routeId ?? null}
-                onActivateRoute={(r) => {
-                  setActiveRoute(r);
-                  if (r) setActiveScenarioIds(new Set());
-                }}
-              />
-            ) : sidebarTab === "auto" ? (
-              <ScenariosSidebar
-                doc={doc}
-                runs={runs}
-                activeScenarioIds={activeScenarioIds}
-                overlayRole={overlayRole}
-                onSelect={(id, additive) => { toggleScenario(id, additive); setActiveRoute(null); }}
-                onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); setActiveRoute(null); }}
-                scenarioColor={scenarioColor}
-              />
-            ) : (
-              <TestsPanel doc={doc} />
-            )}
+          <div className="flowdoc-sidebar-wrap">
+            <ScenarioTreesPanel
+              doc={doc}
+              activeRouteId={activeRoute?.routeId ?? null}
+              onActivateRoute={(r) => {
+                setActiveRoute(r);
+                if (r) setActiveScenarioIds(new Set());
+              }}
+            />
           </div>
         )}
         <div className="flowdoc-canvas-scroll" ref={scrollRef} style={{ overflow: "hidden", position: "relative" } as React.CSSProperties}>
