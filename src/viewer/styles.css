@@ -1311,6 +1311,91 @@ body,
 .flowdoc-param-body   { background: #fae8ff; color: #86198f; border-color: #f5d0fe; }
 .flowdoc-param-header { background: #e5e5e5; color: #525252; border-color: #d4d4d4; }
 
+/* Handwritten scenario-tree panel — sits under ScenariosSidebar */
+.flowdoc-sidebar-wrap {
+  display: flex; flex-direction: column;
+  width: 280px; min-width: 280px;
+  height: 100%; min-height: 0;
+  border-right: 1px solid #e2e8f0;
+}
+.flowdoc-sidebar-wrap .flowdoc-sidebar-panel {
+  width: 100% !important; min-width: 0 !important; max-width: none !important;
+  flex: 1 1 0; min-height: 0; max-height: 50%;
+  border-right: none;
+}
+.flowdoc-trees-panel {
+  display: flex; flex-direction: column; min-height: 0;
+  border-top: 2px solid #e2e8f0;
+  background: #fafbfc;
+  flex: 1 1 auto; overflow: hidden;
+}
+.flowdoc-trees-empty { padding: 0; }
+.flowdoc-trees-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; font-size: 11px; font-weight: 600;
+  background: #f1f5f9; color: #475569; border-bottom: 1px solid #e2e8f0;
+}
+.flowdoc-trees-title { flex: 1; text-transform: uppercase; letter-spacing: .03em; }
+.flowdoc-trees-count { color: #94a3b8; font-weight: 500; }
+.flowdoc-trees-dl {
+  background: #2563eb; color: white; border: 0; border-radius: 4px;
+  font-size: 10px; padding: 2px 8px; cursor: pointer; font-weight: 600;
+}
+.flowdoc-trees-dl:hover { background: #1d4ed8; }
+.flowdoc-trees-empty-msg {
+  padding: 12px; font-size: 11px; color: #64748b; line-height: 1.4;
+}
+.flowdoc-trees-list { overflow-y: auto; flex: 1 1 auto; }
+.flowdoc-tree { border-bottom: 1px solid #e2e8f0; }
+.flowdoc-tree-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: transparent; border: 0; padding: 6px 10px;
+  font-size: 11px; cursor: pointer; text-align: left;
+}
+.flowdoc-tree-head:hover { background: #f1f5f9; }
+.flowdoc-tree-caret { width: 12px; color: #94a3b8; }
+.flowdoc-tree-kind {
+  font-size: 9px; font-weight: 700; color: white;
+  text-transform: uppercase; letter-spacing: .03em;
+  padding: 1px 5px; border-radius: 3px;
+}
+.flowdoc-tree-role {
+  font-size: 9px; font-weight: 600; color: #475569;
+  background: #e2e8f0; padding: 1px 5px; border-radius: 3px;
+}
+.flowdoc-tree-title-text { flex: 1; color: #1e293b; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.flowdoc-tree-route-count {
+  font-size: 10px; color: #94a3b8; font-variant-numeric: tabular-nums;
+}
+.flowdoc-tree-routes {
+  list-style: none; padding: 0; margin: 0; background: #ffffff;
+}
+.flowdoc-tree-route {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px 4px 26px; font-size: 10px;
+  cursor: pointer; border-left: 2px solid transparent;
+  color: #475569;
+}
+.flowdoc-tree-route:hover { background: #f8fafc; }
+.flowdoc-tree-route.active {
+  background: #dbeafe; border-left-color: #2563eb; color: #1e3a8a;
+  font-weight: 600;
+}
+.flowdoc-tree-route-id {
+  background: #f1f5f9; padding: 0 4px; border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px; color: #64748b; min-width: 24px; text-align: center;
+}
+.flowdoc-tree-route-len {
+  background: #ddd6fe; color: #5b21b6;
+  padding: 0 4px; border-radius: 3px; font-size: 9px; font-weight: 700;
+}
+.flowdoc-tree-route-label {
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* Sidebar option-pick badge */
 .flowdoc-sidebar-item-opts {
   margin-left: auto;

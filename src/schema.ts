@@ -186,6 +186,62 @@ const ScenarioSchema = z.object({
   optionAssignments: z.array(OptionAssignmentSchema).optional(),
 });
 
+// ─── Handwritten scenario trees ───
+// Tree describes a user-intent flow with branching. DFS expansion → unique
+// runnable routes that a test agent can execute or a tester can walk through.
+//
+//   next      — sequential: after this step, run the contained sub-tree(s).
+//               Array → all sub-trees expanded as parallel forks.
+//   branches  — independent actions at this point (cartesian product). e.g.
+//               at BookingDetail manager can view-location, change-customer,
+//               edit-booking — and any combination of these in one session.
+//   variants  — variants of ONE action (pick-one, mutually exclusive). e.g.
+//               "add 1 product" / "add 3 products" / "add many".
+//   leaf      — end of branch; routes terminate here.
+//   expect    — what assertion the test runner should verify.
+//   stateRef  — state.num this step lives on (canvas highlights it).
+//   action    — "kind:target" form, refers to State.actions[] entry.
+//   as        — actor's role for THIS step (overrides scenario.role). Use for
+//               security trees that pretend to be a different actor.
+const ScenarioStepBaseSchema = z.object({
+  step: z.string(),                                // human-readable description
+  stateRef: z.number().int().positive().optional(),// state.num
+  stateId: z.string().optional(),                  // alternative: ref by state.id
+  action: z.string().optional(),                   // "kind:target" e.g. "submit:post"
+  expect: z.string().optional(),
+  as: z.string().optional(),                       // role override for this step
+  leaf: z.boolean().optional(),
+});
+export type ScenarioStep = {
+  step: string;
+  stateRef?: number;
+  stateId?: string;
+  action?: string;
+  expect?: string;
+  as?: string;
+  leaf?: boolean;
+  next?: ScenarioStep | ScenarioStep[];
+  branches?: Record<string, ScenarioStep>;
+  variants?: ScenarioStep[];
+};
+const ScenarioStepSchema: z.ZodType<ScenarioStep> = z.lazy(() =>
+  ScenarioStepBaseSchema.extend({
+    next: z.union([ScenarioStepSchema, z.array(ScenarioStepSchema)]).optional(),
+    branches: z.record(z.string(), ScenarioStepSchema).optional(),
+    variants: z.array(ScenarioStepSchema).optional(),
+  })
+) as z.ZodType<ScenarioStep>;
+
+const ScenarioTreeSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  role: z.string().optional(),
+  kind: z.enum(["happy", "edge", "security", "regression"]).default("happy"),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  tree: ScenarioStepSchema,
+});
+
 export const FlowDocSchema = z.object({
   title: z.string().default("Sitemap"),
   subtitle: z.string().optional(),
@@ -197,11 +253,14 @@ export const FlowDocSchema = z.object({
   states: z.array(StateSchema).optional(),
   transitions: z.array(TransitionSchema).optional(),
   scenarios: z.array(ScenarioSchema).optional(),
+  scenarioTrees: z.array(ScenarioTreeSchema).optional(),    // handwritten intent trees
 
   edges: z.array(EdgeSchema).optional(),
 }).refine((d) => (d.screens && d.screens.length) || (d.states && d.states.length), {
   message: "flows.json must have at least one of: screens[] (legacy) or states[] (state-canvas).",
 });
+
+export type ScenarioTree = z.infer<typeof ScenarioTreeSchema>;
 
 export type FlowDoc = z.infer<typeof FlowDocSchema>;
 export type Role = z.infer<typeof RoleSchema>;

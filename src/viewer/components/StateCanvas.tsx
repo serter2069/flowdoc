@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FlowDoc, State, StateKind } from "../../schema";
 import type { RunsData, RunStatus } from "../runs";
 import { ScenariosSidebar } from "./ScenariosList";
+import { ScenarioTreesPanel } from "./ScenarioTreesPanel";
+import type { ScenarioRoute } from "../../commands/scenario-tree";
 
 const KIND_GLYPH: Record<StateKind, string> = {
   page: "P", state: "·", modal: "M", error: "!", success: "✓",
@@ -171,6 +173,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const marqueeRef = useRef<{ startWX: number; startWY: number; additive: boolean } | null>(null);
   const [detailsNum, setDetailsNum] = useState<number | null>(null);
   const [activeScenarioIds, setActiveScenarioIds] = useState<Set<string>>(new Set());
+  const [activeRoute, setActiveRoute] = useState<ScenarioRoute | null>(null);
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -524,7 +527,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
     if (spaceDown.current) return;        // space-pan takes precedence
     // Lock: when a scenario is active, only cards on that path are draggable.
     // Stops accidental drags on neighbours while user is studying a path.
-    if (activeScenariosList.length > 0 && !cardsInScenario.has(num)) {
+    if ((activeScenariosList.length > 0 || routeStateRefs.length > 0) && !cardsInScenario.has(num)) {
       e.preventDefault();
       return;
     }
@@ -576,16 +579,25 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
     activeScenariosList.forEach((s, i) => m.set(s.id, MULTI_PALETTE[i % MULTI_PALETTE.length]));
     return m;
   }, [activeScenariosList]);
+  // Active route nodes/edges — same highlight machinery as scenarios, fed by
+  // the handwritten scenario-tree panel below.
+  const routeStateRefs = useMemo(() => {
+    const ns: number[] = [];
+    if (activeRoute) for (const s of activeRoute.steps) if (typeof s.stateRef === "number") ns.push(s.stateRef);
+    return ns;
+  }, [activeRoute]);
   const cardsInScenario = useMemo(() => {
     const s = new Set<number>();
     for (const sc of activeScenariosList) for (const n of sc.path) s.add(n);
+    for (const n of routeStateRefs) s.add(n);
     return s;
-  }, [activeScenariosList]);
+  }, [activeScenariosList, routeStateRefs]);
   const edgesInScenario = useMemo(() => {
     const s = new Set<string>();
     for (const sc of activeScenariosList) for (let i = 0; i < sc.path.length - 1; i++) s.add(`${sc.path[i]}→${sc.path[i + 1]}`);
+    for (let i = 0; i < routeStateRefs.length - 1; i++) s.add(`${routeStateRefs[i]}→${routeStateRefs[i + 1]}`);
     return s;
-  }, [activeScenariosList]);
+  }, [activeScenariosList, routeStateRefs]);
   // Per-edge color when multiple scenarios are active: edge picks the color of
   // the FIRST scenario in the active list that contains it (good enough for
   // visual distinction; conflicting edges still render).
@@ -721,15 +733,25 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
 
       <div className="flowdoc-canvas-body">
         {sidebarOpen && (
-          <ScenariosSidebar
-            doc={doc}
-            runs={runs}
-            activeScenarioIds={activeScenarioIds}
-            overlayRole={overlayRole}
-            onSelect={toggleScenario}
-            onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); }}
-            scenarioColor={scenarioColor}
-          />
+          <div className="flowdoc-sidebar-wrap">
+            <ScenariosSidebar
+              doc={doc}
+              runs={runs}
+              activeScenarioIds={activeScenarioIds}
+              overlayRole={overlayRole}
+              onSelect={toggleScenario}
+              onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); }}
+              scenarioColor={scenarioColor}
+            />
+            <ScenarioTreesPanel
+              doc={doc}
+              activeRouteId={activeRoute?.routeId ?? null}
+              onActivateRoute={(r) => {
+                setActiveRoute(r);
+                if (r) setActiveScenarioIds(new Set());      // mutual-exclusive with auto scenarios
+              }}
+            />
+          </div>
         )}
         <div className="flowdoc-canvas-scroll" ref={scrollRef} style={{ overflow: "hidden", position: "relative" } as React.CSSProperties}>
         <div className="flowdoc-canvas" style={{
@@ -773,7 +795,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 const edgeKey = `${t.from}→${t.to}`;
                 const inScen = edgesInScenario.has(edgeKey);
                 const inOverlay = roleScenarioEdges.has(edgeKey);
-                const dimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
+                const dimmed = (overlayRole && !inOverlay) || ((activeScenariosList.length > 0 || routeStateRefs.length > 0) && !inScen);
                 let layer = 1;
                 if (isSynthetic && !inScen && !inOverlay) layer = 0;
                 else if (dimmed) layer = 0;
@@ -808,7 +830,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
             const sel = selectedNums.has(s.num);
             const inScen = cardsInScenario.has(s.num);
             const inOverlay = roleScenarioStates.has(s.num);
-            const cardDimmed = (overlayRole && !inOverlay) || (activeScenariosList.length > 0 && !inScen);
+            const cardDimmed = (overlayRole && !inOverlay) || ((activeScenariosList.length > 0 || routeStateRefs.length > 0) && !inScen);
             return (
               <div
                 key={s.num}

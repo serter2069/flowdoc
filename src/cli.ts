@@ -233,6 +233,24 @@ program
   });
 
 program
+  .command("scenarios")
+  .description("Expand handwritten scenario trees into runnable routes; export as table")
+  .argument("[flows]", "Path to flows.json", "flows.json")
+  .option("-f, --format <fmt>", "csv | json", "csv")
+  .option("-o, --out <path>", "Output path", "scenarios-routes.csv")
+  .option("--max-comb <n>", "Max combination size for branches (default 3)", (v) => parseInt(v, 10), 3)
+  .option("--tree <id>", "Only expand the scenario tree with this id")
+  .action(async (flowsArg: string | undefined, opts: any) => {
+    const { scenariosCommand } = await import("./commands/scenarios.js");
+    scenariosCommand(flowsArg ?? "flows.json", {
+      format: opts.format === "json" ? "json" : "csv",
+      out: opts.out,
+      maxCombinationSize: opts.maxComb,
+      treeId: opts.tree,
+    });
+  });
+
+program
   .command("watch")
   .description("Watch flows.json (and optional source dirs) — auto rebuild + republish on every change")
   .argument("[flows]", "Path to flows.json", "flows.json")
