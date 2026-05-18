@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import type { FlowDoc, State, StateAction, Transition } from "../schema.js";
-import { extractActionsFromJsx } from "./jsx-actions.js";
+import type { FlowDoc, State, StateAction, Transition, Control } from "../schema.js";
+import { extractActionsFromJsx, extractControlsFromJsx } from "./jsx-actions.js";
 
 interface ScanRnOpts {
   out: string;
@@ -103,6 +103,7 @@ interface RnScreen {
   navTo: Set<string>;
   apiCalls: Set<string>;
   actions: StateAction[];        // JSX-extracted button/handler actions
+  controls: Control[];           // JSX-extracted form fields (TextInput, Picker, ...)
   file: string;
 }
 
@@ -169,6 +170,7 @@ function readScreens(srcRoot: string, screensDir: string): RnScreen[] {
 
     // JSX-extracted action buttons (e.g. <Pressable onPress={() => api.delete('/comments/123')}>Delete</Pressable>)
     const actions = extractActionsFromJsx(src);
+    const controls = extractControlsFromJsx(src);
 
     out.push({
       id: "rn-" + slugify(componentName),
@@ -176,7 +178,7 @@ function readScreens(srcRoot: string, screensDir: string): RnScreen[] {
       registeredName: componentName.replace(/Screen$/, ""),
       title: titleizeScreen(componentName),
       roles: inferRoleFromName(componentName),
-      navTo, apiCalls, actions,
+      navTo, apiCalls, actions, controls,
       file,
     });
   }
@@ -267,7 +269,7 @@ export function scanRnCommand(rootArg: string | undefined, opts: ScanRnOpts) {
     const col = ROLE_COLS[s.roles[0]] ?? 6;
     const row = rowPerCol.get(col) ?? 0;
     rowPerCol.set(col, row + 1);
-    states.push({ num: nextNum, id: s.id, kind: "page", title: s.title, roles: s.roles, col, row, ...(s.actions.length ? { actions: s.actions } : {}) });
+    states.push({ num: nextNum, id: s.id, kind: "page", title: s.title, roles: s.roles, col, row, ...(s.actions.length ? { actions: s.actions } : {}), ...(s.controls.length ? { controls: s.controls } : {}) });
     idToNum.set(s.id, nextNum);
     nextNum++;
   }

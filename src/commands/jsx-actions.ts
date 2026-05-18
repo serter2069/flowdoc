@@ -1,4 +1,4 @@
-import type { StateAction } from "../schema.js";
+import type { StateAction, Control } from "../schema.js";
 
 /**
  * Walk a JSX/TSX source file looking for clickable elements (Button,
@@ -18,9 +18,11 @@ import type { StateAction } from "../schema.js";
  * — those need flow-typing and an OpenAPI mapping to resolve back to a URL.
  */
 
-const CLICKABLE_RE = /<(Button|Pressable|TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback|Link)\b([^>]*?)(\/>|>)/g;
+const CLICKABLE_RE = /<([A-Z][A-Za-z0-9]*(?:Button|Pressable|Touchable|Link|Fab|IconButton|Chip|Tab)|Button|Pressable|TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback|Link)\b([^>]*?)(\/>|>)/g;
 const ON_PRESS_RE = /\bon(?:Press|Click)\s*=\s*\{/g;
-const API_CALL_INLINE = /\bapi\s*\.\s*(get|post|put|patch|delete)\s*[<(]?\s*['"`]([^'"`]+)['"`]/g;
+const API_CALL_INLINE = /\b(?:api|axios|\$fetch|http|client|service)\s*\.\s*(get|post|put|patch|delete)\s*[<(]?\s*['"`]([^'"`]+)['"`]/g;
+const FETCH_CALL_INLINE = /\bfetch\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*\{[^}]*method\s*:\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`]/gi;
+const MUTATION_CALL_RE = /\b(?:[a-zA-Z_$][\w$]*Mutation|[a-zA-Z_$][\w$]*\.mutation|mutation)\s*\.\s*(?:mutate|mutateAsync)\s*\(/g;
 const TITLE_PROP_RE = /\b(?:title|accessibilityLabel|label|name)\s*=\s*[{"']([^"'}]+)['"}]/;
 const CHILDREN_TEXT_RE = />\s*([A-Z][\w\s'.-]{1,40})\s*</;
 
@@ -35,16 +37,43 @@ function methodToKind(method: string): StateAction["kind"] | null {
   }
 }
 
+function inferKindFromLabel(label: string): StateAction["kind"] | null {
+  // Infer action kind from a visible button label like "Submit booking" / "Delete" / "Sign in".
+  const n = label.toLowerCase();
+  if (/\b(delete|remove|destroy|cancel|drop|trash)\b/.test(n)) return "delete";
+  if (/\b(add|create|new|invite|book|schedule|register)\b/.test(n)) return "add";
+  if (/\b(edit|update|save|change|set|rename|modify)\b/.test(n)) return "edit";
+  if (/\b(upload|attach|import|pick a file|choose file)\b/.test(n)) return "upload";
+  if (/\b(toggle|switch|enable|disable|activate|deactivate)\b/.test(n)) return "toggle";
+  if (/\b(submit|send|confirm|complete|finish|post|sign\s?in|log\s?in|continue|next)\b/.test(n)) return "submit";
+  if (/\b(approve|accept|allow|grant)\b/.test(n)) return "approve";
+  if (/\b(reject|deny|block|decline)\b/.test(n)) return "reject";
+  if (/\b(select|pick|choose)\b/.test(n)) return "select";
+  if (/\b(download|export)\b/.test(n)) return "download";
+  return null;
+}
+
+function labelToTarget(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32) || "action";
+}
+
 function inferKindFromHandlerName(name: string): StateAction["kind"] | null {
   const n = name.toLowerCase();
-  if (/^(handle)?delete|remove|destroy/.test(n)) return "delete";
-  if (/^(handle)?(add|create|new|post|insert)/.test(n)) return "add";
-  if (/^(handle)?(edit|update|save|change|set)/.test(n)) return "edit";
-  if (/^(handle)?upload/.test(n)) return "upload";
-  if (/^(handle)?toggle/.test(n)) return "toggle";
-  if (/^(handle)?submit|send/.test(n)) return "submit";
-  if (/^(handle)?approve|accept|confirm/.test(n)) return "approve";
-  if (/^(handle)?reject|cancel|deny/.test(n)) return "reject";
+  // Strip common prefixes that just say "this is a handler"
+  const core = n.replace(/^(on|handle|do)/, "");
+  if (/^(delete|remove|destroy)/.test(core)) return "delete";
+  if (/^(add|create|new|post|insert|book|invite)/.test(core)) return "add";
+  if (/^(edit|update|save|change|set|rename)/.test(core)) return "edit";
+  if (/^(upload|attach|import)/.test(core)) return "upload";
+  if (/^(toggle|switch|enable|disable)/.test(core)) return "toggle";
+  if (/^(submit|send|sign|login|continue|next|finish|complete)/.test(core)) return "submit";
+  if (/^(approve|accept|confirm|allow)/.test(core)) return "approve";
+  if (/^(reject|cancel|deny|decline|block)/.test(core)) return "reject";
+  if (/^(select|pick|choose)/.test(core)) return "select";
   return null;
 }
 
@@ -123,23 +152,37 @@ export function extractActionsFromJsx(src: string): StateAction[] {
       if (body) handlerExpr = body;
     }
 
-    // Find api.METHOD('/path') inside the handler body
+    // Find api.METHOD('/path') / axios.METHOD / fetch('/path', {method:...}) inside the handler body
     const apis: Array<{ method: string; path: string }> = [];
     API_CALL_INLINE.lastIndex = 0;
     let am: RegExpExecArray | null;
     while ((am = API_CALL_INLINE.exec(handlerExpr))) {
       apis.push({ method: am[1], path: am[2] });
     }
+    FETCH_CALL_INLINE.lastIndex = 0;
+    while ((am = FETCH_CALL_INLINE.exec(handlerExpr))) {
+      apis.push({ method: am[2].toLowerCase(), path: am[1] });
+    }
+
+    // Detect react-query mutation calls — we don't know the URL but we know
+    // the handler is firing a mutation, so emit a generic action.
+    const hasMutationCall = MUTATION_CALL_RE.test(handlerExpr);
+    MUTATION_CALL_RE.lastIndex = 0;
 
     const label = extractActionLabel(fullTag, src.slice(startIdx, startIdx + 200));
+    const fallbackKind = inferredKindFromName ?? inferKindFromLabel(label);
 
     if (apis.length === 0) {
-      // No api call, but the handler-name hints at an action (e.g. onPress={handleDelete})
-      if (inferredKindFromName) {
-        const key = `${inferredKindFromName}:${label}`;
+      // No direct api call. Emit a fallback action if we have ANY signal
+      // about what this button does — handler name, mutation call, or a
+      // descriptive button label.
+      const kind: StateAction["kind"] | null = fallbackKind ?? (hasMutationCall ? "submit" : null);
+      if (kind) {
+        const target = labelToTarget(label);
+        const key = `${kind}:${target}`;
         if (!seen.has(key)) {
           seen.add(key);
-          actions.push({ kind: inferredKindFromName, target: label });
+          actions.push({ kind, target, comment: hasMutationCall ? `mutation: ${label}` : `button: ${label}` });
         }
       }
       continue;
@@ -159,4 +202,43 @@ export function extractActionsFromJsx(src: string): StateAction[] {
     }
   }
   return actions;
+}
+
+// ─── Form-field / control extraction ───────────────────────────────────────
+// Catches <TextInput>, <Picker>/<Select>, <Switch>, <Checkbox>, file inputs.
+// Used to populate state.controls[] so `flowdoc validate` can check whether a
+// scenario step mentions a field/picker that actually exists.
+
+const INPUT_RE = /<(TextInput|Input|TextField|Textarea|Picker|Select|Switch|Checkbox)\b([^>]*?)(\/>|>)/g;
+const FIELD_NAME_PROP_RE = /\b(?:name|id|testID|accessibilityLabel|placeholder|label)\s*=\s*[{"']([^"'}]+)['"}]/;
+
+function controlKindFromTag(tag: string): Control["kind"] {
+  switch (tag.toLowerCase()) {
+    case "textinput":
+    case "input":
+    case "textfield":   return "input";
+    case "textarea":    return "textarea";
+    case "picker":
+    case "select":      return "select";
+    case "switch":      return "toggle";
+    case "checkbox":    return "toggle";
+    default:            return "input";
+  }
+}
+
+export function extractControlsFromJsx(src: string): Control[] {
+  const out: Control[] = [];
+  const seen = new Set<string>();
+  for (const m of src.matchAll(INPUT_RE)) {
+    const tag = m[1];
+    const attrs = m[2];
+    const kind = controlKindFromTag(tag);
+    const nameMatch = FIELD_NAME_PROP_RE.exec(attrs);
+    const label = nameMatch ? nameMatch[1].slice(0, 40) : tag.toLowerCase();
+    const key = `${kind}:${label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind, label });
+  }
+  return out;
 }

@@ -114,9 +114,34 @@ function checkActionMatches(ctx: StepContext, byNum: Map<number, State>, out: Is
   const state = ctx.step.stateRef !== undefined ? byNum.get(ctx.step.stateRef) : undefined;
   if (!state) return;
   const [kind, ...rest] = ctx.step.action.split(":");
-  const target = rest.join(":");
+  const target = (rest.join(":") || "").toLowerCase();
   const actions = state.actions ?? [];
-  const match = actions.find((a) => a.kind === kind && (target === "" || a.target === target || a.target.includes(target) || target.includes(a.target)));
+
+  // Fuzzy match strategy, in order of strictness:
+  //   1. exact kind+target
+  //   2. target substring match either direction
+  //   3. target appears in action.comment (e.g. URL slug match — common when
+  //      scanner extracts "submit:s" from POST /bookings)
+  //   4. kind-only match if target was generic ("booking" → any submit action
+  //      whose URL contains "booking")
+  const stateId = state.id.toLowerCase();
+  const stateIdContainsTarget = target !== "" && (stateId.includes(target) || stateId.includes(target.replace(/s$/, "")));
+  const match = actions.find((a) => {
+    if (a.kind !== kind) return false;
+    if (target === "") return true;
+    if (a.target === target) return true;
+    if (a.target.toLowerCase().includes(target) || target.includes(a.target.toLowerCase())) return true;
+    if ((a.comment ?? "").toLowerCase().includes(target)) return true;
+    // Singular/plural shift: "booking" vs "bookings"
+    const tNoPlural = target.replace(/s$/, "");
+    if (tNoPlural && (a.target.toLowerCase().includes(tNoPlural) || (a.comment ?? "").toLowerCase().includes(tNoPlural))) return true;
+    // State-id implies the target: rn-loginscreen has submit:sign-in — a step
+    // saying `submit:login` is clearly about THIS screen since the state id
+    // contains "login". Accept any same-kind action.
+    if (stateIdContainsTarget) return true;
+    return false;
+  });
+
   if (!match) {
     const available = actions.map((a) => `${a.kind}:${a.target}`).join(", ") || "(none)";
     out.push({
@@ -152,7 +177,13 @@ function checkTextMentionsRealAction(ctx: StepContext, byNum: Map<number, State>
   const state = ctx.step.stateRef !== undefined ? byNum.get(ctx.step.stateRef) : undefined;
   if (!state) return;
   if (ctx.step.action) return; // explicit action already validated by checkActionMatches
-  if (ctx.step.leaf && /\b(notification|email|webhook|callback|fires|dispatched|sent|recorded|persisted)\b/i.test(ctx.step.step)) return; // leaf-only side-effect step
+  // Side-effect states (notifications, emails, webhooks, jobs, db) have no
+  // user-visible affordances — verb heuristics don't apply.
+  if (["push", "email", "webhook", "effect", "db"].includes(state.kind)) return;
+  // Step text describing an outcome rather than a user action — skip heuristic.
+  if (/\b(notification|email|webhook|callback|fires|dispatched|sent|recorded|persisted|queued|succeeds|completes|renders|returns)\b/i.test(ctx.step.step)) return;
+  // Negative / edge-case scenarios — the absence of a UI action IS the test.
+  if (/\b(without|skip|leave blank|leave empty|empty|invalid|wrong|bad|missing|no \w+)\b/i.test(ctx.step.step)) return;
   const text = ctx.step.step;
   const actions = state.actions ?? [];
 
