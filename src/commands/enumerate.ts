@@ -14,6 +14,17 @@ interface EnumerateOpts {
 
 const TERMINAL_KINDS = new Set(["success", "email", "push", "db", "webhook", "error"]);
 
+/**
+ * Patterns identifying transitions added by `synthesizeAuthGateTransitions`.
+ * Strip them all before regenerating, otherwise repeated runs of `enumerate`
+ * accumulate duplicates. Keep this list in sync with the labels produced
+ * inside that function.
+ */
+const SYNTHETIC_LABEL_RE = /^(login as |enter as |tab-bar |visit \/login|client lands |submit booking |manager sees )/;
+function isSyntheticEdge(t: Transition): boolean {
+  return SYNTHETIC_LABEL_RE.test(t.label ?? "");
+}
+
 function isTerminal(state: State, outgoing: Transition[]): boolean {
   if (TERMINAL_KINDS.has(state.kind ?? "state")) return true;
   if (outgoing.length === 0) return true;
@@ -199,10 +210,10 @@ export function enumerateCommand(flowsArg: string | undefined, opts: EnumerateOp
   const states = doc.states ?? [];
   const baseTransitions = doc.transitions ?? [];
   // Add synthetic auth-gate edges so DFS from Login reaches every authenticated
-  // role-home. These edges live in-memory for enumeration only; they are NOT
-  // persisted to flows.json (otherwise re-merging would duplicate them).
-  // Strip any previously-persisted synthetic auth-gate edges before regenerating
-  const realTransitions = baseTransitions.filter((t) => !/^login as /.test(t.label ?? ""));
+  // role-home. These edges are persisted to flows.json so the canvas can render
+  // them, but every re-run must strip ALL of them (every label pattern listed in
+  // SYNTHETIC_LABEL_RE) before re-synthesizing — otherwise duplicates accumulate.
+  const realTransitions = baseTransitions.filter((t) => !isSyntheticEdge(t));
   const synthetic = synthesizeAuthGateTransitions(states, realTransitions);
   if (synthetic.length) console.log(`  + ${synthetic.length} synthetic auth-gate edges from Login to role homes`);
   const transitions = [...realTransitions, ...synthetic];
