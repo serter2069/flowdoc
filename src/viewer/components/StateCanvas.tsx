@@ -174,6 +174,10 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const [detailsNum, setDetailsNum] = useState<number | null>(null);
   const [activeScenarioIds, setActiveScenarioIds] = useState<Set<string>>(new Set());
   const [activeRoute, setActiveRoute] = useState<ScenarioRoute | null>(null);
+  // Sidebar tab — start on "handwritten" if scenarioTrees exist; otherwise the
+  // auto-scenarios tab is the only useful view.
+  const initialTab: "handwritten" | "auto" = (doc.scenarioTrees ?? []).length > 0 ? "handwritten" : "auto";
+  const [sidebarTab, setSidebarTab] = useState<"handwritten" | "auto">(initialTab);
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -734,23 +738,42 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
       <div className="flowdoc-canvas-body">
         {sidebarOpen && (
           <div className="flowdoc-sidebar-wrap">
-            <ScenariosSidebar
-              doc={doc}
-              runs={runs}
-              activeScenarioIds={activeScenarioIds}
-              overlayRole={overlayRole}
-              onSelect={toggleScenario}
-              onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); }}
-              scenarioColor={scenarioColor}
-            />
-            <ScenarioTreesPanel
-              doc={doc}
-              activeRouteId={activeRoute?.routeId ?? null}
-              onActivateRoute={(r) => {
-                setActiveRoute(r);
-                if (r) setActiveScenarioIds(new Set());      // mutual-exclusive with auto scenarios
-              }}
-            />
+            <div className="flowdoc-sidebar-tabs">
+              <button
+                className={`flowdoc-sidebar-tab ${sidebarTab === "handwritten" ? "active" : ""}`}
+                onClick={() => setSidebarTab("handwritten")}
+              >
+                Handwritten
+                <span className="flowdoc-sidebar-tab-count">{(doc.scenarioTrees ?? []).length}</span>
+              </button>
+              <button
+                className={`flowdoc-sidebar-tab ${sidebarTab === "auto" ? "active" : ""}`}
+                onClick={() => setSidebarTab("auto")}
+              >
+                Auto
+                <span className="flowdoc-sidebar-tab-count">{(doc.scenarios ?? []).length}</span>
+              </button>
+            </div>
+            {sidebarTab === "handwritten" ? (
+              <ScenarioTreesPanel
+                doc={doc}
+                activeRouteId={activeRoute?.routeId ?? null}
+                onActivateRoute={(r) => {
+                  setActiveRoute(r);
+                  if (r) setActiveScenarioIds(new Set());      // mutual-exclusive with auto scenarios
+                }}
+              />
+            ) : (
+              <ScenariosSidebar
+                doc={doc}
+                runs={runs}
+                activeScenarioIds={activeScenarioIds}
+                overlayRole={overlayRole}
+                onSelect={(id, additive) => { toggleScenario(id, additive); setActiveRoute(null); }}
+                onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); setActiveRoute(null); }}
+                scenarioColor={scenarioColor}
+              />
+            )}
           </div>
         )}
         <div className="flowdoc-canvas-scroll" ref={scrollRef} style={{ overflow: "hidden", position: "relative" } as React.CSSProperties}>

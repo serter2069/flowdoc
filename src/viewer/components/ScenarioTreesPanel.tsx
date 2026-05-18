@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import type { FlowDoc, ScenarioTree } from "../../schema";
+import { useMemo, useState } from "react";
+import type { FlowDoc } from "../../schema";
 import { expandScenarioTree, type ScenarioRoute, toCsv } from "../../commands/scenario-tree";
 
 interface Props {
@@ -94,16 +94,19 @@ export function ScenarioTreesPanel({ doc, activeRouteId, onActivateRoute }: Prop
                 <ul className="flowdoc-tree-routes">
                   {routes.map((r) => {
                     const isActive = activeRouteId === r.routeId;
+                    // Show only the unique tail after the last "·" — the tree
+                    // title is already implied by the parent group.
+                    const tailLabel = r.title.split("·").pop()?.trim() ?? r.title;
                     return (
                       <li
                         key={r.routeId}
                         className={`flowdoc-tree-route ${isActive ? "active" : ""}`}
                         onClick={() => onActivateRoute(isActive ? null : r)}
-                        title={r.steps.map((s, i) => `${i + 1}. ${s.step}`).join("\n")}
+                        title={r.steps.map((s, i) => `${i + 1}. ${s.step}${s.expect ? `\n   ↳ ${s.expect}` : ""}`).join("\n")}
                       >
                         <span className="flowdoc-tree-route-id">{r.routeId.split("-").pop()}</span>
                         <span className="flowdoc-tree-route-len">{r.steps.length}</span>
-                        <span className="flowdoc-tree-route-label">{r.title.split("·").slice(1).join("·").trim() || r.title}</span>
+                        <span className="flowdoc-tree-route-label">{tailLabel}</span>
                       </li>
                     );
                   })}

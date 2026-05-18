@@ -1314,14 +1314,43 @@ body,
 /* Handwritten scenario-tree panel — sits under ScenariosSidebar */
 .flowdoc-sidebar-wrap {
   display: flex; flex-direction: column;
-  width: 280px; min-width: 280px;
+  width: 320px; min-width: 320px;
   height: 100%; min-height: 0;
   border-right: 1px solid #e2e8f0;
+  background: #fafbfd;
 }
 .flowdoc-sidebar-wrap .flowdoc-sidebar-panel {
   width: 100% !important; min-width: 0 !important; max-width: none !important;
-  flex: 1 1 0; min-height: 0; max-height: 50%;
+  flex: 1 1 auto; min-height: 0;
   border-right: none;
+}
+.flowdoc-sidebar-wrap .flowdoc-trees-panel { flex: 1 1 auto; min-height: 0; }
+
+/* Tab bar at the top of the sidebar */
+.flowdoc-sidebar-tabs {
+  display: flex; align-items: stretch;
+  background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
+  flex: 0 0 auto;
+}
+.flowdoc-sidebar-tab {
+  flex: 1; background: transparent; border: 0;
+  padding: 8px 10px; font-size: 11px; font-weight: 600;
+  color: #64748b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-bottom: 2px solid transparent;
+}
+.flowdoc-sidebar-tab:hover { background: #e2e8f0; color: #1e293b; }
+.flowdoc-sidebar-tab.active {
+  background: #fafbfd; color: #1e293b;
+  border-bottom-color: #2563eb;
+}
+.flowdoc-sidebar-tab-count {
+  background: #cbd5e1; color: #475569;
+  padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.flowdoc-sidebar-tab.active .flowdoc-sidebar-tab-count {
+  background: #2563eb; color: white;
 }
 .flowdoc-trees-panel {
   display: flex; flex-direction: column; min-height: 0;

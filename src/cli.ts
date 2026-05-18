@@ -233,6 +233,50 @@ program
   });
 
 program
+  .command("run")
+  .description("Run handwritten scenario routes through Playwright against a live deploy; report pass/fail per route")
+  .argument("[flows]", "Path to flows.json", "flows.json")
+  .requiredOption("-u, --base-url <url>", "Base URL of the deployed app (e.g. https://pluto.smartlaunchhub.com)")
+  .option("-o, --out <path>", "Report JSON output path", "scenario-report.json")
+  .option("-s, --screenshots <dir>", "Per-step screenshots dir", ".flowdoc/scenario-screens")
+  .option("--tree <id>", "Only run routes from this scenario tree id")
+  .option("--max-routes <n>", "Cap at N routes (safety)", (v) => parseInt(v, 10))
+  .option("--llm", "Use Claude API to assert each step's expect (needs ANTHROPIC_API_KEY)", false)
+  .option("--model <id>", "Claude model id", "claude-haiku-4-5-20251001")
+  .option("--api-key <key>", "Override ANTHROPIC_API_KEY")
+  .option("--headed", "Run with a visible browser (debug)", false)
+  .option("--timeout <ms>", "Per-step timeout", (v) => parseInt(v, 10), 15000)
+  .action(async (flowsArg: string | undefined, opts: any) => {
+    const { runScenariosCommand } = await import("./commands/run-scenarios.js");
+    await runScenariosCommand(flowsArg ?? "flows.json", {
+      baseUrl: opts.baseUrl,
+      out: opts.out,
+      screenshots: opts.screenshots,
+      treeId: opts.tree,
+      maxRoutes: opts.maxRoutes,
+      llm: !!opts.llm,
+      apiKey: opts.apiKey,
+      model: opts.model,
+      headed: !!opts.headed,
+      timeoutMs: opts.timeout,
+    });
+  });
+
+program
+  .command("gaps")
+  .description("Coverage diff — what's covered by handwritten trees vs auto-scenarios, and what's missed by both")
+  .argument("[flows]", "Path to flows.json", "flows.json")
+  .option("-f, --format <fmt>", "text | json", "text")
+  .option("-o, --out <path>", "Write report to file (default: stdout)")
+  .action(async (flowsArg: string | undefined, opts: any) => {
+    const { gapsCommand } = await import("./commands/gaps.js");
+    gapsCommand(flowsArg ?? "flows.json", {
+      format: opts.format === "json" ? "json" : "text",
+      out: opts.out,
+    });
+  });
+
+program
   .command("scenarios")
   .description("Expand handwritten scenario trees into runnable routes; export as table")
   .argument("[flows]", "Path to flows.json", "flows.json")
