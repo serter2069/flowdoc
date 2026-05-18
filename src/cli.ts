@@ -362,6 +362,22 @@ program
   });
 
 program
+  .command("validate")
+  .description("Lint scenarioTrees against the state graph — catch hallucinated steps that reference UI affordances that don't exist")
+  .argument("[flows]", "Path to flows.json", "flows.json")
+  .option("-f, --format <fmt>", "text | json", "text")
+  .option("--fail-on-warning", "Exit with code 1 if any warnings are found", false)
+  .option("--max-comb <n>", "Max branch-combination size when expanding trees", (v) => parseInt(v, 10), 3)
+  .action(async (flowsArg: string | undefined, opts: any) => {
+    const { validateCommand } = await import("./commands/validate.js");
+    validateCommand(flowsArg ?? "flows.json", {
+      format: opts.format === "json" ? "json" : "text",
+      failOnWarning: !!opts.failOnWarning,
+      maxCombinationSize: opts.maxComb,
+    });
+  });
+
+program
   .command("gaps")
   .description("Coverage diff — what's covered by handwritten trees vs auto-scenarios, and what's missed by both")
   .argument("[flows]", "Path to flows.json", "flows.json")
