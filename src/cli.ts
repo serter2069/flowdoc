@@ -232,6 +232,90 @@ program
     });
   });
 
+const test = program.command("test").description("Test-case tracking — persistent per-project SQLite. Lets agents pick pending cases and mark pass/fail/blocked.");
+
+test
+  .command("sync")
+  .description("Expand scenarioTrees × platforms and upsert into the test_cases DB")
+  .argument("[flows]", "Path to flows.json", "flows.json")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name (auto-inferred from flows.json title if omitted)")
+  .option("--platforms <list>", "Comma-separated platforms", "web-desktop,web-mobile,ios,android")
+  .option("--tree <id>", "Only sync this scenario tree id")
+  .option("--max-comb <n>", "Max branch-combination size", (v) => parseInt(v, 10), 3)
+  .action(async (flowsArg: string | undefined, opts: any) => {
+    const { testSync } = await import("./commands/test.js");
+    testSync({
+      flows: flowsArg ?? "flows.json",
+      dbPath: opts.db, project: opts.project,
+      platforms: String(opts.platforms).split(",").map((s: string) => s.trim()).filter(Boolean),
+      treeId: opts.tree, maxCombinationSize: opts.maxComb,
+    });
+  });
+
+test
+  .command("list")
+  .description("List test cases — filter by platform/status/kind/role")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name", "default")
+  .option("--platform <p>", "Filter by platform")
+  .option("--status <s>", "Filter by status (pass | fail | blocked | pending)")
+  .option("--kind <k>", "Filter by kind (happy | edge | security | regression)")
+  .option("--role <r>", "Filter by role")
+  .option("--limit <n>", "Max rows", (v) => parseInt(v, 10))
+  .option("-f, --format <fmt>", "table | json", "table")
+  .action(async (opts: any) => {
+    const { testList } = await import("./commands/test.js");
+    testList({ dbPath: opts.db, project: opts.project, platform: opts.platform, status: opts.status, kind: opts.kind, role: opts.role, limit: opts.limit, format: opts.format });
+  });
+
+test
+  .command("next")
+  .description("Get one pending test case as JSON — agent pipes this through its runner")
+  .option("--db <path>", ".flowdoc/flowdoc.db", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name", "default")
+  .option("--platform <p>", "Filter by platform")
+  .option("--kind <k>", "Filter by kind")
+  .option("--role <r>", "Filter by role")
+  .action(async (opts: any) => {
+    const { testNext } = await import("./commands/test.js");
+    testNext({ dbPath: opts.db, project: opts.project, platform: opts.platform, kind: opts.kind, role: opts.role });
+  });
+
+test
+  .command("mark <id>")
+  .description("Mark a test case pass | fail | blocked with optional notes")
+  .requiredOption("--status <s>", "pass | fail | blocked")
+  .option("--notes <text>", "Notes / failure reason / screenshot path", "")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name (informational only)")
+  .action(async (id: string, opts: any) => {
+    const { testMark } = await import("./commands/test.js");
+    testMark({ id, status: opts.status, notes: opts.notes, dbPath: opts.db, project: opts.project });
+  });
+
+test
+  .command("reset")
+  .description("Clear status/notes/completed_at so cases re-enter the pending queue")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name", "default")
+  .option("--platform <p>", "Only reset this platform")
+  .action(async (opts: any) => {
+    const { testReset } = await import("./commands/test.js");
+    testReset({ dbPath: opts.db, project: opts.project, platform: opts.platform });
+  });
+
+test
+  .command("status")
+  .description("Coverage matrix — per-platform × per-kind counts and % complete")
+  .option("--db <path>", "SQLite DB path", ".flowdoc/flowdoc.db")
+  .option("--project <name>", "Project name", "default")
+  .option("-f, --format <fmt>", "table | json", "table")
+  .action(async (opts: any) => {
+    const { testStatus } = await import("./commands/test.js");
+    testStatus({ dbPath: opts.db, project: opts.project, format: opts.format });
+  });
+
 program
   .command("run")
   .description("Run handwritten scenario routes through Playwright against a live deploy; report pass/fail per route")
