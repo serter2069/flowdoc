@@ -3,6 +3,7 @@ import type { FlowDoc, State, StateKind } from "../../schema";
 import type { RunsData, RunStatus } from "../runs";
 import { ScenariosSidebar } from "./ScenariosList";
 import { ScenarioTreesPanel } from "./ScenarioTreesPanel";
+import { TestsPanel } from "./TestsPanel";
 import type { ScenarioRoute } from "../../commands/scenario-tree";
 
 const KIND_GLYPH: Record<StateKind, string> = {
@@ -176,8 +177,8 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
   const [activeRoute, setActiveRoute] = useState<ScenarioRoute | null>(null);
   // Sidebar tab — start on "handwritten" if scenarioTrees exist; otherwise the
   // auto-scenarios tab is the only useful view.
-  const initialTab: "handwritten" | "auto" = (doc.scenarioTrees ?? []).length > 0 ? "handwritten" : "auto";
-  const [sidebarTab, setSidebarTab] = useState<"handwritten" | "auto">(initialTab);
+  const initialTab: "handwritten" | "auto" | "tests" = (doc.scenarioTrees ?? []).length > 0 ? "handwritten" : "auto";
+  const [sidebarTab, setSidebarTab] = useState<"handwritten" | "auto" | "tests">(initialTab);
   const [filterMode, setFilterMode] = useState<"all" | "untested" | "fail" | "pass">("all");
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -737,7 +738,7 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
 
       <div className="flowdoc-canvas-body">
         {sidebarOpen && (
-          <div className="flowdoc-sidebar-wrap">
+          <div className={`flowdoc-sidebar-wrap ${sidebarTab === "tests" ? "wide" : ""}`}>
             <div className="flowdoc-sidebar-tabs">
               <button
                 className={`flowdoc-sidebar-tab ${sidebarTab === "handwritten" ? "active" : ""}`}
@@ -753,6 +754,13 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 Auto
                 <span className="flowdoc-sidebar-tab-count">{(doc.scenarios ?? []).length}</span>
               </button>
+              <button
+                className={`flowdoc-sidebar-tab ${sidebarTab === "tests" ? "active" : ""}`}
+                onClick={() => setSidebarTab("tests")}
+              >
+                Tests
+                <span className="flowdoc-sidebar-tab-count">{(doc.routeStatus ?? []).length || (doc.scenarioTrees ?? []).length}</span>
+              </button>
             </div>
             {sidebarTab === "handwritten" ? (
               <ScenarioTreesPanel
@@ -760,10 +768,10 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 activeRouteId={activeRoute?.routeId ?? null}
                 onActivateRoute={(r) => {
                   setActiveRoute(r);
-                  if (r) setActiveScenarioIds(new Set());      // mutual-exclusive with auto scenarios
+                  if (r) setActiveScenarioIds(new Set());
                 }}
               />
-            ) : (
+            ) : sidebarTab === "auto" ? (
               <ScenariosSidebar
                 doc={doc}
                 runs={runs}
@@ -773,6 +781,8 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
                 onSelectRole={(role) => { setOverlayRole(overlayRole === role ? null : role); setActiveScenarioIds(new Set()); setActiveRoute(null); }}
                 scenarioColor={scenarioColor}
               />
+            ) : (
+              <TestsPanel doc={doc} />
             )}
           </div>
         )}

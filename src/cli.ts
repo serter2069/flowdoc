@@ -37,7 +37,8 @@ program
   .argument("[flows]", "Path to flows.json", "flows.json")
   .option("-o, --out <path>", "Output HTML path", "flowdoc.html")
   .option("--with-runs <db>", "Embed run results from a flowdoc.db (SQLite) — adds the Coverage matrix tab")
-  .action(buildCommand);
+  .option("--with-test-db <db>", "Embed handwritten-route test statuses from a flowdoc.db (defaults to <flows-dir>/.flowdoc/flowdoc.db)")
+  .action((flowsArg: string, opts: any) => buildCommand(flowsArg, { out: opts.out, withRuns: opts.withRuns, withTestDb: opts.withTestDb }));
 
 program
   .command("scan")

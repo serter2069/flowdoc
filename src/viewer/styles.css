@@ -1592,3 +1592,177 @@ body,
   padding: 1px 5px;
   font-size: 12px;
 }
+
+/* ---------- Tests tab (matrix view) ---------- */
+.flowdoc-sidebar-wrap.wide { width: 680px; min-width: 680px; }
+
+.flowdoc-tests-panel {
+  display: flex; flex-direction: column;
+  flex: 1 1 auto; min-height: 0;
+  background: #fafbfc;
+  font-size: 11px;
+}
+.flowdoc-tests-empty {
+  padding: 20px; color: #64748b; font-size: 12px; text-align: center;
+}
+
+.flowdoc-tests-progress {
+  padding: 8px 12px; border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex: 0 0 auto;
+}
+.flowdoc-tests-progress-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.flowdoc-tests-progress-label {
+  font-size: 11px; font-weight: 700; color: #1e293b;
+  text-transform: uppercase; letter-spacing: .04em;
+  min-width: 56px;
+}
+.flowdoc-tests-progress-counts {
+  font-size: 10px; color: #64748b; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.flowdoc-tests-progress-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+}
+.flowdoc-tests-progress-col-label {
+  font-size: 9px; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+.flowdoc-tests-progress-sub {
+  display: grid; grid-template-columns: 60px 1fr 40px; align-items: center;
+  gap: 4px; margin-bottom: 2px;
+  font-size: 10px;
+}
+.flowdoc-tests-progress-sub-key {
+  font-weight: 600; color: #475569;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flowdoc-tests-progress-sub-val {
+  font-variant-numeric: tabular-nums; color: #64748b; text-align: right;
+}
+.flowdoc-tests-bar {
+  height: 8px; border-radius: 4px; overflow: hidden;
+  background: #e2e8f0; display: flex; flex: 1;
+}
+.flowdoc-tests-bar.thin { height: 6px; border-radius: 3px; }
+.flowdoc-tests-bar-seg.pass { background: #16a34a; }
+.flowdoc-tests-bar-seg.fail { background: #dc2626; }
+.flowdoc-tests-bar-seg.blocked { background: #f59e0b; }
+
+.flowdoc-tests-filters {
+  padding: 8px 12px; border-bottom: 1px solid #e2e8f0;
+  background: #fafbfd;
+  flex: 0 0 auto;
+}
+.flowdoc-tests-chips {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px;
+  align-items: center;
+}
+.flowdoc-tests-chip-grouplabel {
+  font-size: 10px; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-right: 4px; min-width: 38px;
+}
+.flowdoc-tests-chip {
+  font-size: 10px; font-weight: 600;
+  background: #fff; border: 1px solid #cbd5e1;
+  padding: 2px 7px; border-radius: 999px;
+  cursor: pointer; color: #475569;
+}
+.flowdoc-tests-chip:hover { background: #f1f5f9; }
+.flowdoc-tests-chip.on { color: #fff; }
+.flowdoc-tests-filter-line {
+  display: flex; gap: 6px; margin-top: 6px;
+}
+.flowdoc-tests-search {
+  flex: 1; padding: 4px 8px; font-size: 11px;
+  border: 1px solid #cbd5e1; border-radius: 4px;
+  background: #fff; color: #1e293b;
+}
+.flowdoc-tests-tree-picker {
+  padding: 4px 6px; font-size: 11px;
+  border: 1px solid #cbd5e1; border-radius: 4px;
+  background: #fff; color: #1e293b;
+  max-width: 250px;
+}
+.flowdoc-tests-platform-filters {
+  display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.flowdoc-tests-pf {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; color: #64748b;
+}
+.flowdoc-tests-pf-key {
+  font-weight: 600; color: #475569; font-size: 9px;
+  text-transform: uppercase;
+}
+.flowdoc-tests-pf select {
+  font-size: 10px; padding: 1px 4px;
+  border: 1px solid #cbd5e1; border-radius: 3px;
+  background: #fff;
+}
+
+.flowdoc-tests-table-head {
+  display: grid;
+  grid-template-columns: 60px 70px minmax(0, 1fr) 32px 32px 32px 32px 44px;
+  gap: 6px; padding: 6px 10px;
+  background: #f1f5f9; border-bottom: 1px solid #cbd5e1;
+  font-size: 10px; font-weight: 700; color: #475569;
+  text-transform: uppercase; letter-spacing: .03em;
+  position: sticky; top: 0; z-index: 5;
+  flex: 0 0 auto;
+}
+.flowdoc-tests-th-p, .flowdoc-tests-th-prog { text-align: center; }
+
+.flowdoc-tests-table-body {
+  flex: 1 1 auto; overflow-y: auto; min-height: 0;
+}
+.flowdoc-tests-row {
+  display: grid;
+  grid-template-columns: 60px 70px minmax(0, 1fr) 32px 32px 32px 32px 44px;
+  gap: 6px; padding: 5px 10px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 11px;
+  cursor: pointer;
+  align-items: center;
+}
+.flowdoc-tests-row:hover { background: #f8fafc; }
+.flowdoc-tests-cell-role {
+  font-weight: 700; font-size: 9px;
+  text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flowdoc-tests-cell-kind {
+  font-weight: 600; font-size: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flowdoc-tests-cell-title {
+  color: #1e293b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flowdoc-tests-cell-status {
+  text-align: center; font-size: 14px; font-weight: 700;
+}
+.flowdoc-tests-cell-status.status-pass { color: #16a34a; }
+.flowdoc-tests-cell-status.status-fail { color: #dc2626; }
+.flowdoc-tests-cell-status.status-blocked { color: #f59e0b; }
+.flowdoc-tests-cell-status.status-pending { color: #cbd5e1; }
+.flowdoc-tests-cell-prog {
+  text-align: center; font-weight: 700;
+  color: #64748b; font-variant-numeric: tabular-nums;
+}
+.flowdoc-tests-cell-prog.all-pass { color: #16a34a; }
+
+.flowdoc-tests-emptyrow {
+  padding: 24px 16px; text-align: center; color: #94a3b8;
+  font-size: 11px;
+}
+.flowdoc-tests-footer {
+  padding: 6px 12px; border-top: 1px solid #e2e8f0;
+  background: #f8fafc; color: #94a3b8; font-size: 10px;
+  flex: 0 0 auto;
+}
