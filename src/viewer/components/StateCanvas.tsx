@@ -140,22 +140,35 @@ export function StateCanvas({ doc, runs, onPositionsChange }: StateCanvasProps) 
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const isPinch = e.ctrlKey || e.metaKey;
-      const horizontalDominant = Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.5;
-      const isPanGesture = e.shiftKey || (horizontalDominant && !isPinch);
-      if (isPanGesture) {
+      // diagrams.love / Figma / Miro convention:
+      //   Trackpad two-finger scroll (plain wheel) → PAN viewport
+      //   Trackpad pinch (browsers fire wheel + ctrlKey for pinch) → ZOOM
+      //   Cmd/Ctrl + wheel (mouse) → ZOOM (manual modifier path)
+      //   Shift + wheel → also ZOOM (Windows-trackpad fallback)
+      // Sergey's complaint: plain vertical scroll was zooming; on a trackpad
+      // that's wrong — it should move the viewport like every other web canvas.
+      const isZoom = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (!isZoom) {
+        // PAN: translate camera by negative wheel delta. Works for both
+        // vertical mouse wheel and trackpad two-finger swipe.
         const next = { x: panRef.current.x - e.deltaX, y: panRef.current.y - e.deltaY };
         panRef.current = next;
         setPan(next);
         return;
       }
+      // ZOOM around cursor
       const rect = el!.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
-      const clampedDelta = Math.max(-50, Math.min(50, e.deltaY));
-      const factor = Math.exp(-clampedDelta * 0.0025);
+      // Pinch sends ctrlKey + tiny deltaY (a few units per event). Mouse wheel
+      // sends bigger deltaY (100+ per notch). Normalize so pinch feels
+      // responsive without making mouse wheel rocket past the zoom bounds.
+      const deltaUnits = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      const clamped = Math.max(-100, Math.min(100, deltaUnits));
+      const factor = Math.exp(-clamped * 0.01);  // 4x faster than before
       const z0 = zoomRef.current;
-      const newZoom = Math.min(3, Math.max(0.1, z0 * factor));
+      const newZoom = Math.min(3, Math.max(0.05, z0 * factor));
+      // Pan adjustment so cursor stays anchored to same world point
       const scale = newZoom / z0;
       const p0 = panRef.current;
       const newPan = { x: cx - (cx - p0.x) * scale, y: cy - (cy - p0.y) * scale };

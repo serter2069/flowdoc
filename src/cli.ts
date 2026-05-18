@@ -5,6 +5,7 @@ import { serveCommand } from "./commands/serve.js";
 import { scanCommand } from "./commands/scan.js";
 import { scanLaravelCommand } from "./commands/scan-laravel.js";
 import { scanRnCommand } from "./commands/scan-rn.js";
+import { scanExpoCommand } from "./commands/scan-expo-router.js";
 import { crawlCommand } from "./commands/crawl.js";
 import { discoverCommand } from "./commands/discover.js";
 import { generateCommand } from "./commands/generate.js";
@@ -62,6 +63,14 @@ program
   .option("-o, --out <path>", "Output path (when not merging)", "flows-rn.json")
   .option("--merge <path>", "Merge RN states into an existing backend flows.json (adds cross-stack API edges)")
   .action((dirArg: string | undefined, opts: any) => scanRnCommand(dirArg, { out: opts.out, merge: opts.merge }));
+
+program
+  .command("scan-expo")
+  .description("Scan an Expo Router project (app/*.tsx file-based routes) → frontend states + navigation + optional backend API states")
+  .argument("[dir]", "Expo project root (auto-detects app/ or src/app/)", ".")
+  .option("-o, --out <path>", "Output path (when not merging)", "flows-expo.json")
+  .option("--merge <path>", "Merge into an existing flows.json instead of overwriting")
+  .action((dirArg: string | undefined, opts: any) => scanExpoCommand(dirArg, { out: opts.out, merge: opts.merge }));
 
 program
   .command("serve")
