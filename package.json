@@ -38,7 +38,9 @@
     "build:cli": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/cli.js --banner:js=\"#!/usr/bin/env node\" --external:playwright --external:playwright-core --external:chromium-bidi --external:better-sqlite3 --external:fast-glob",
     "build": "npm run build:viewer && npm run build:cli && chmod +x dist/cli.js",
     "dev": "npm run build && node dist/cli.js build examples/pluto/flows.json -o examples/pluto/flowdoc.html",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@types/pixelmatch": "^5.2.6",
@@ -61,7 +63,9 @@
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitest/runner": "^4.1.6",
     "esbuild": "^0.28.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^2.1.9"
   }
 }
