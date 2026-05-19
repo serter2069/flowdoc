@@ -216,6 +216,7 @@ async function drainQueue(ctx: { projects: ProjectsConfig; opts: DaemonOpts }): 
         baseUrl: job.request.baseUrl ?? pc.baseUrl,
         out: reportPath,
         screenshots: `${ctx.opts.dataDir}/screens/${job.id}`,
+        baselineDir: `${ctx.opts.dataDir}/baselines/${job.project}`,
         treeId,
         maxRoutes: job.request.maxRoutes,
         llm: job.request.llm ?? false,

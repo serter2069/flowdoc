@@ -2,11 +2,13 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { validateFlowDoc, type State } from "../schema.js";
 import { expandScenarioTree, resolveRouteRefs, type ScenarioRoute } from "./scenario-tree.js";
+import { pickAdapter, runAxe, runVisualDiff, runPerf, runSecurity, runOffline, type AdapterResult } from "./runner/adapters.js";
 
 interface RunOpts {
   baseUrl: string;                        // e.g. https://pluto.smartlaunchhub.com
   out: string;                            // report path (JSON)
   screenshots?: string;                   // dir for per-step PNGs (default .flowdoc/scenario-screens)
+  baselineDir?: string;                   // dir for visual-diff goldens (default .flowdoc/baselines)
   treeId?: string;                        // limit to one tree
   maxRoutes?: number;                     // safety cap
   llm: boolean;                           // run LLM-based assertions
@@ -14,6 +16,7 @@ interface RunOpts {
   model: string;                          // claude model id
   headed: boolean;                        // run with visible browser (debug)
   timeoutMs: number;                      // per-step timeout
+  updateVisual?: boolean;                 // overwrite visual baselines instead of comparing
 }
 
 interface StepResult {
@@ -25,6 +28,7 @@ interface StepResult {
   pageErrors: string[];
   screenshotPath?: string;
   llmVerdict?: { pass: boolean; reason: string };
+  adapter?: AdapterResult;
   status: "pass" | "fail" | "skip";
 }
 interface RouteResult {
@@ -142,6 +146,38 @@ export async function runScenariosCommand(flowsArg: string, opts: RunOpts): Prom
         }
       }
 
+      // Specialized adapter dispatch (axe / visual / perf / security / offline).
+      // Picked from step text + tree kind; absent adapter means we fall back to
+      // the basic Playwright load + console-error checks.
+      let adapter: AdapterResult | undefined;
+      const adapterKind = pickAdapter(step, route.kind);
+      // Security adapter doesn't need page load — it probes via request API.
+      const adapterCanRunWithoutLoad = adapterKind === "security";
+      if (adapterKind && (loaded || adapterCanRunWithoutLoad)) {
+        try {
+          if (adapterKind === "axe") {
+            adapter = await runAxe(page);
+          } else if (adapterKind === "visual") {
+            adapter = await runVisualDiff({
+              page, baselineDir: opts.baselineDir ?? resolve(process.cwd(), ".flowdoc/baselines"),
+              routeId: route.routeId, stepIndex: i,
+              updateBaseline: opts.updateVisual,
+            });
+          } else if (adapterKind === "perf") {
+            adapter = await runPerf(page, step.expect ?? "");
+          } else if (adapterKind === "security") {
+            adapter = await runSecurity({
+              ctx, baseUrl: opts.baseUrl,
+              path: state?.path, expectText: step.expect ?? step.step,
+            });
+          } else if (adapterKind === "offline") {
+            adapter = await runOffline(page, step.expect ?? step.step);
+          }
+        } catch (e) {
+          adapter = { pass: false, kind: adapterKind, reason: `adapter ${adapterKind} threw: ${(e as Error).message}` };
+        }
+      }
+
       page.off("pageerror", onPageErr);
       page.off("console", onConsoleErr);
 
@@ -149,7 +185,8 @@ export async function runScenariosCommand(flowsArg: string, opts: RunOpts): Prom
         (url && !loaded) ||
         pageErrors.length > 0 ||
         consoleErrors.length > 0 ||
-        (llmVerdict && !llmVerdict.pass);
+        (llmVerdict && !llmVerdict.pass) ||
+        (adapter && !adapter.pass);
       const status: StepResult["status"] = !url ? "skip" : (failedHere ? "fail" : "pass");
 
       steps.push({
@@ -161,6 +198,7 @@ export async function runScenariosCommand(flowsArg: string, opts: RunOpts): Prom
         pageErrors: pageErrors.slice(0, 5),
         screenshotPath: shotPath,
         llmVerdict,
+        adapter,
         status,
       });
       if (status === "fail" && !routeFailed) { routeFailed = true; failedAt = i; break; }

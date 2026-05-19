@@ -338,6 +338,7 @@ program
   .requiredOption("-u, --base-url <url>", "Base URL of the deployed app (e.g. https://pluto.smartlaunchhub.com)")
   .option("-o, --out <path>", "Report JSON output path", "scenario-report.json")
   .option("-s, --screenshots <dir>", "Per-step screenshots dir", ".flowdoc/scenario-screens")
+  .option("--baseline-dir <dir>", "Visual-diff baselines dir (one PNG per step-id)", ".flowdoc/baselines")
   .option("--tree <id>", "Only run routes from this scenario tree id")
   .option("--max-routes <n>", "Cap at N routes (safety)", (v) => parseInt(v, 10))
   .option("--llm", "Use Claude API to assert each step's expect (needs ANTHROPIC_API_KEY)", false)
@@ -345,12 +346,14 @@ program
   .option("--api-key <key>", "Override ANTHROPIC_API_KEY")
   .option("--headed", "Run with a visible browser (debug)", false)
   .option("--timeout <ms>", "Per-step timeout", (v) => parseInt(v, 10), 15000)
+  .option("--update-visual", "Overwrite visual baselines instead of diffing — use after intentional UI change", false)
   .action(async (flowsArg: string | undefined, opts: any) => {
     const { runScenariosCommand } = await import("./commands/run-scenarios.js");
     await runScenariosCommand(flowsArg ?? "flows.json", {
       baseUrl: opts.baseUrl,
       out: opts.out,
       screenshots: opts.screenshots,
+      baselineDir: opts.baselineDir,
       treeId: opts.tree,
       maxRoutes: opts.maxRoutes,
       llm: !!opts.llm,
@@ -358,6 +361,7 @@ program
       model: opts.model,
       headed: !!opts.headed,
       timeoutMs: opts.timeout,
+      updateVisual: !!opts.updateVisual,
     });
   });
 
