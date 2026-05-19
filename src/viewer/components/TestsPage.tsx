@@ -1,8 +1,38 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import type { FlowDoc } from "../../schema";
 import { expandScenarioTree, type ScenarioRoute } from "../../commands/scenario-tree";
 
 interface Props { doc: FlowDoc; }
+
+// Runner integration — same-origin under /_runner/, set in nginx.
+const RUNNER_BASE = "/_runner";
+const RUNNER_TOKEN_KEY = "flowdoc-runner-token";
+const POLL_MS = 15000;
+
+interface RunnerResults {
+  project: string;
+  lastRun: null | {
+    jobId: string;
+    startedAt?: string;
+    finishedAt?: string;
+    total?: number;
+    passed?: number;
+    failed?: number;
+  };
+}
+
+interface JobInfo {
+  id: string;
+  project: string;
+  status: "queued" | "running" | "passed" | "failed" | "error";
+  total?: number;
+  passed?: number;
+  failed?: number;
+  startedAt?: string;
+  finishedAt?: string;
+  log?: string[];
+  error?: string;
+}
 
 type CellStatus = "pass" | "fail" | "blocked" | "pending";
 const PLATFORMS = ["web-desktop", "web-mobile", "ios", "android"] as const;
@@ -85,6 +115,78 @@ export function TestsPage({ doc }: Props) {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Runner state — null until first /results poll succeeds
+  const [runnerResults, setRunnerResults] = useState<RunnerResults["lastRun"]>(null);
+  const [runnerOnline, setRunnerOnline] = useState<boolean | null>(null);
+  const [activeJob, setActiveJob] = useState<JobInfo | null>(null);
+  const projectKey = (doc.title ?? "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-")[0] || "project";
+
+  // Poll /results — gives us last run + per-platform counts
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const res = await fetch(`${RUNNER_BASE}/results/${projectKey}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = (await res.json()) as RunnerResults;
+        if (!cancelled) { setRunnerOnline(true); setRunnerResults(data.lastRun); }
+      } catch {
+        if (!cancelled) setRunnerOnline(false);
+      }
+    }
+    poll();
+    const t = setInterval(poll, POLL_MS);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [projectKey]);
+
+  // Poll active job every 2s while a run is in progress
+  useEffect(() => {
+    if (!activeJob || activeJob.status === "passed" || activeJob.status === "failed" || activeJob.status === "error") return;
+    let cancelled = false;
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem(RUNNER_TOKEN_KEY) : null;
+    async function tick() {
+      try {
+        const res = await fetch(`${RUNNER_BASE}/jobs/${activeJob!.id}`, {
+          cache: "no-store",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = (await res.json()) as JobInfo;
+          if (!cancelled) setActiveJob(data);
+        }
+      } catch { /* ignore — next tick retries */ }
+    }
+    const t = setInterval(tick, 2000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [activeJob]);
+
+  const kickRun = useCallback(async (treeIds?: string[]) => {
+    let token = typeof localStorage !== "undefined" ? localStorage.getItem(RUNNER_TOKEN_KEY) : null;
+    if (!token) {
+      const entered = typeof prompt !== "undefined" ? prompt("Runner bearer token (cached locally; from /etc/flowdoc/runner.env):") : null;
+      if (!entered) return;
+      token = entered;
+      try { localStorage.setItem(RUNNER_TOKEN_KEY, token); } catch { /* private mode */ }
+    }
+    try {
+      const res = await fetch(`${RUNNER_BASE}/run`, {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ project: projectKey, treeIds }),
+      });
+      if (res.status === 401) {
+        try { localStorage.removeItem(RUNNER_TOKEN_KEY); } catch { /* ignore */ }
+        alert("Token rejected. Clear cached and try again.");
+        return;
+      }
+      if (!res.ok) { alert(`Run failed: HTTP ${res.status}`); return; }
+      const data = (await res.json()) as { jobId: string; status: string };
+      setActiveJob({ id: data.jobId, project: projectKey, status: data.status as JobInfo["status"] });
+    } catch (e) {
+      alert(`Run failed: ${(e as Error).message}`);
+    }
+  }, [projectKey]);
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -118,6 +220,12 @@ export function TestsPage({ doc }: Props) {
     [rows]
   );
 
+  const failingTreeIds = useMemo(() => {
+    const fails = filteredRows.filter((r) => r.passCount < PLATFORMS.length);
+    const ids = new Set(fails.map((r) => r.treeId));
+    return [...ids];
+  }, [filteredRows]);
+
   function copyScenario(row: Row) {
     const project = (doc.title ?? "project").toLowerCase().replace(/\W+/g, "-");
     const lines = [
@@ -147,6 +255,31 @@ export function TestsPage({ doc }: Props) {
 
   return (
     <div className="tests-page">
+      <div className="tests-runner-bar">
+        <span className={`tests-runner-dot ${runnerOnline === true ? "online" : runnerOnline === false ? "offline" : "unknown"}`} />
+        <span className="tests-runner-status">
+          {runnerOnline === null && "checking runner…"}
+          {runnerOnline === false && "runner offline (canvas read-only)"}
+          {runnerOnline === true && !runnerResults && "runner online · no runs yet"}
+          {runnerOnline === true && runnerResults && (
+            <>runner online · last run {runnerResults.finishedAt ? new Date(runnerResults.finishedAt).toLocaleString() : "—"} · {runnerResults.passed}/{runnerResults.total} pass{runnerResults.failed ? `, ${runnerResults.failed} fail` : ""}</>
+          )}
+        </span>
+        {runnerOnline === true && (
+          <div className="tests-runner-buttons">
+            <button className="tests-runner-btn" onClick={() => kickRun()} disabled={!!activeJob && activeJob.status === "running"}>▶ Run all</button>
+            <button className="tests-runner-btn" onClick={() => kickRun(failingTreeIds)} disabled={!!activeJob && activeJob.status === "running" || failingTreeIds.length === 0}>↻ Re-run failing ({failingTreeIds.length})</button>
+          </div>
+        )}
+        {activeJob && (
+          <span className="tests-runner-job">
+            job {activeJob.id.slice(0, 8)} · <strong>{activeJob.status}</strong>
+            {activeJob.status === "running" && " (Playwright working…)"}
+            {(activeJob.status === "passed" || activeJob.status === "failed") && ` · ${activeJob.passed}/${activeJob.total} pass`}
+            {activeJob.error && ` · ${activeJob.error}`}
+          </span>
+        )}
+      </div>
       <div className="tests-progress-wrap">
         <div className="tests-progress-top">
           <span className="tests-progress-pct">{pct}%</span>

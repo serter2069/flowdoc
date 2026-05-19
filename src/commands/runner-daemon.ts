@@ -109,8 +109,13 @@ async function handle(
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") { res.statusCode = 204; res.end(); return; }
 
-  // Auth (skip for GET /health which is the liveness probe)
-  if (ctx.opts.token && !(url.pathname === "/health" && req.method === "GET")) {
+  // Auth — skip for liveness probe + read-only results endpoint. The latter
+  // exists so the canvas (static HTML, no token) can poll for status counts
+  // without exposing /run, /jobs, or per-job logs to the public.
+  const isPublicRead =
+    req.method === "GET" &&
+    (url.pathname === "/health" || /^\/results\/[a-zA-Z0-9_-]+$/.test(url.pathname));
+  if (ctx.opts.token && !isPublicRead) {
     const auth = req.headers["authorization"] ?? "";
     if (auth !== `Bearer ${ctx.opts.token}`) {
       sendJson(res, 401, { error: "unauthorized" });
