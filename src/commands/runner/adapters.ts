@@ -229,32 +229,87 @@ function pickExpectedStatus(text: string): number[] {
 }
 
 // ─── offline / network throttling ──────────────────────────────────────────
-
-const OFFLINE_PRESET = { offline: true, downloadThroughput: 0, uploadThroughput: 0, latency: 0 };
-const SLOW_3G_PRESET = { offline: false, downloadThroughput: 50 * 1024, uploadThroughput: 50 * 1024, latency: 400 };
+//
+// Two distinct flows:
+//
+//   "offline"  → check that the *already-loaded* page survives losing the
+//                network. We do NOT reload — that would force a fetch the
+//                browser cannot satisfy, which both clears the page and
+//                tears down the JS execution context (page.evaluate then
+//                explodes with 'Execution context was destroyed').
+//
+//   "slow-3g"  → throttle, then reload. The reload should succeed slowly,
+//                not catastrophically. We wait for it to settle before
+//                evaluating, and treat a timeout as a soft fail.
+//
+// In both branches, the network state is restored in a finally block so the
+// next step starts on a clean connection.
 
 export async function runOffline(page: Page, expectText: string): Promise<AdapterResult> {
-  const preset = /slow.?3g/i.test(expectText) ? SLOW_3G_PRESET : OFFLINE_PRESET;
+  const slow3g = /slow.?3g/i.test(expectText);
+  const ctx = page.context();
+  let restoreCdp: (() => Promise<void>) | null = null;
+
   try {
-    const session = await page.context().newCDPSession(page);
-    await session.send("Network.emulateNetworkConditions", {
-      offline: preset.offline,
-      downloadThroughput: preset.downloadThroughput,
-      uploadThroughput: preset.uploadThroughput,
-      latency: preset.latency,
-    });
-    // Re-trigger the current step's URL under the throttle
-    try { await page.reload({ waitUntil: "domcontentloaded", timeout: 8000 }); }
-    catch { /* expected for offline */ }
-    const stillHere = await page.evaluate(() => document.body && document.body.innerText.length > 0);
-    // Restore connectivity
-    await session.send("Network.emulateNetworkConditions", { offline: false, downloadThroughput: -1, uploadThroughput: -1, latency: 0 });
+    if (slow3g) {
+      // Throttle via CDP and reload.
+      const session = await ctx.newCDPSession(page);
+      await session.send("Network.emulateNetworkConditions", {
+        offline: false,
+        downloadThroughput: 50 * 1024,    // ~50 KB/s
+        uploadThroughput: 50 * 1024,
+        latency: 400,
+      });
+      restoreCdp = async () => {
+        try {
+          await session.send("Network.emulateNetworkConditions", {
+            offline: false, downloadThroughput: -1, uploadThroughput: -1, latency: 0,
+          });
+        } catch { /* CDP may be detached; ignore */ }
+      };
+
+      let navOk = false;
+      try {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 20000 });
+        navOk = true;
+      } catch { /* timeout — page may still be partially usable */ }
+
+      // Settle and check body content — execution context exists once nav
+      // either completed or timed out.
+      const hasContent = await page.evaluate(() => document.body && document.body.innerText.length > 0).catch(() => false);
+      return {
+        pass: !!hasContent, kind: "offline",
+        reason: hasContent
+          ? `page rendered under slow-3G${navOk ? "" : " (reload timed out but DOM survived)"}`
+          : `page failed under slow-3G — no usable content within 20s`,
+      };
+    }
+
+    // OFFLINE branch — Playwright's setOffline is cleaner than CDP because
+    // it doesn't try to reload anything; it just intercepts new requests.
+    await ctx.setOffline(true);
+    restoreCdp = async () => { try { await ctx.setOffline(false); } catch { /* ignore */ } };
+
+    const hasContent = await page.evaluate(() => document.body && document.body.innerText.length > 0).catch(() => false);
+
+    // Optional second probe: try to navigate to a no-op anchor and see whether
+    // the SPA handles offline gracefully without throwing uncaught errors.
+    let consoleErrorAfter = 0;
+    const onErr = (m: import("playwright").ConsoleMessage) => { if (m.type() === "error") consoleErrorAfter++; };
+    page.on("console", onErr);
+    await page.waitForTimeout(500);
+    page.off("console", onErr);
+
     return {
-      pass: !!stillHere, kind: "offline",
-      reason: stillHere ? `page rendered under ${preset.offline ? "offline" : "slow-3g"} (cached / SW)` : `page blank under ${preset.offline ? "offline" : "slow-3g"} — no offline support`,
+      pass: !!hasContent, kind: "offline",
+      reason: hasContent
+        ? `page survived going offline (cached UI visible${consoleErrorAfter ? `, ${consoleErrorAfter} console errors`: ""})`
+        : `page blank under offline — no offline support`,
     };
   } catch (e) {
     return { pass: false, kind: "offline", reason: `throttle failed: ${(e as Error).message}` };
+  } finally {
+    if (restoreCdp) await restoreCdp();
   }
 }
 

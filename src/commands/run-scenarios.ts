@@ -168,10 +168,10 @@ export async function runScenariosCommand(flowsArg: string, opts: RunOpts): Prom
           } else if (adapterKind === "security") {
             adapter = await runSecurity({
               ctx, baseUrl: opts.baseUrl,
-              path: state?.path, expectText: step.expect ?? step.step,
+              path: state?.path, expectText: `${step.step} ${step.expect ?? ""}`,
             });
           } else if (adapterKind === "offline") {
-            adapter = await runOffline(page, step.expect ?? step.step);
+            adapter = await runOffline(page, `${step.step} ${step.expect ?? ""}`);
           }
         } catch (e) {
           adapter = { pass: false, kind: adapterKind, reason: `adapter ${adapterKind} threw: ${(e as Error).message}` };
