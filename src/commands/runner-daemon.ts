@@ -141,6 +141,27 @@ async function handle(
     return;
   }
 
+  // Full per-step report for a finished job — used by the canvas job-details
+  // viewer. We don't ship this inline on /jobs/:id because it can be 1MB+.
+  const reportMatch = url.pathname.match(/^\/jobs\/([a-zA-Z0-9_-]+)\/report$/);
+  if (req.method === "GET" && reportMatch) {
+    const j = jobs.find((x) => x.id === reportMatch[1]);
+    if (!j) { sendJson(res, 404, { error: "not found" }); return; }
+    if (!j.resultPath || !existsSync(j.resultPath)) {
+      sendJson(res, 404, { error: "report not yet written" });
+      return;
+    }
+    try {
+      const body = readFileSync(j.resultPath, "utf8");
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(body);
+    } catch (e) {
+      sendJson(res, 500, { error: `failed to read report: ${(e as Error).message}` });
+    }
+    return;
+  }
+
   const resultsMatch = url.pathname.match(/^\/results\/([a-zA-Z0-9_-]+)$/);
   if (req.method === "GET" && resultsMatch) {
     const project = resultsMatch[1];

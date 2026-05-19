@@ -34,6 +34,47 @@ interface JobInfo {
   error?: string;
 }
 
+interface AdapterResult {
+  pass: boolean;
+  kind: "axe" | "visual" | "perf" | "security" | "offline" | null;
+  reason: string;
+  detail?: Record<string, unknown>;
+}
+
+interface RouteStepResult {
+  step: string;
+  stateRef?: number;
+  url?: string;
+  loaded: boolean;
+  consoleErrors: string[];
+  pageErrors: string[];
+  screenshotPath?: string;
+  llmVerdict?: { pass: boolean; reason: string };
+  adapter?: AdapterResult;
+  status: "pass" | "fail" | "skip";
+}
+
+interface RouteResult {
+  routeId: string;
+  treeId: string;
+  title: string;
+  kind: string;
+  role?: string;
+  status: "pass" | "fail";
+  failedAt?: number;
+  steps: RouteStepResult[];
+}
+
+interface FullReport {
+  baseUrl: string;
+  startedAt: string;
+  finishedAt: string;
+  total: number;
+  passed: number;
+  failed: number;
+  routes: RouteResult[];
+}
+
 type CellStatus = "pass" | "fail" | "blocked" | "pending";
 const PLATFORMS = ["web-desktop", "web-mobile", "ios", "android"] as const;
 type Platform = (typeof PLATFORMS)[number];
@@ -119,6 +160,10 @@ export function TestsPage({ doc }: Props) {
   const [runnerResults, setRunnerResults] = useState<RunnerResults["lastRun"]>(null);
   const [runnerOnline, setRunnerOnline] = useState<boolean | null>(null);
   const [activeJob, setActiveJob] = useState<JobInfo | null>(null);
+  const [viewingJobId, setViewingJobId] = useState<string | null>(null);
+  const [viewingReport, setViewingReport] = useState<FullReport | null>(null);
+  const [viewingError, setViewingError] = useState<string | null>(null);
+  const [expandedRouteIds, setExpandedRouteIds] = useState<Set<string>>(new Set());
   const projectKey = (doc.title ?? "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-")[0] || "project";
 
   // Poll /results — gives us last run + per-platform counts
@@ -226,6 +271,54 @@ export function TestsPage({ doc }: Props) {
     return [...ids];
   }, [filteredRows]);
 
+  const openReport = useCallback(async (jobId: string) => {
+    setViewingJobId(jobId);
+    setViewingReport(null);
+    setViewingError(null);
+    setExpandedRouteIds(new Set());
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem(RUNNER_TOKEN_KEY) : null;
+    try {
+      const res = await fetch(`${RUNNER_BASE}/jobs/${jobId}/report`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+      });
+      if (res.status === 404) {
+        setViewingError("Report not ready yet — job may still be running.");
+        return;
+      }
+      if (res.status === 401) {
+        setViewingError("Bearer token rejected. Clear localStorage and re-enter.");
+        return;
+      }
+      if (!res.ok) { setViewingError(`HTTP ${res.status}`); return; }
+      const data = (await res.json()) as FullReport;
+      setViewingReport(data);
+    } catch (e) {
+      setViewingError(`Failed to load: ${(e as Error).message}`);
+    }
+  }, []);
+
+  const closeReport = useCallback(() => {
+    setViewingJobId(null);
+    setViewingReport(null);
+    setViewingError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!viewingJobId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeReport(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewingJobId, closeReport]);
+
+  function toggleRoute(routeId: string) {
+    setExpandedRouteIds((s) => {
+      const next = new Set(s);
+      if (next.has(routeId)) next.delete(routeId); else next.add(routeId);
+      return next;
+    });
+  }
+
   function copyScenario(row: Row) {
     const project = (doc.title ?? "project").toLowerCase().replace(/\W+/g, "-");
     const lines = [
@@ -272,12 +365,26 @@ export function TestsPage({ doc }: Props) {
           </div>
         )}
         {activeJob && (
-          <span className="tests-runner-job">
+          <button
+            className="tests-runner-job tests-runner-job-btn"
+            onClick={() => (activeJob.status === "passed" || activeJob.status === "failed") && openReport(activeJob.id)}
+            disabled={activeJob.status === "queued" || activeJob.status === "running"}
+            title={(activeJob.status === "passed" || activeJob.status === "failed") ? "Click for details" : "Run in progress…"}
+          >
             job {activeJob.id.slice(0, 8)} · <strong>{activeJob.status}</strong>
             {activeJob.status === "running" && " (Playwright working…)"}
             {(activeJob.status === "passed" || activeJob.status === "failed") && ` · ${activeJob.passed}/${activeJob.total} pass`}
             {activeJob.error && ` · ${activeJob.error}`}
-          </span>
+          </button>
+        )}
+        {runnerResults && (!activeJob || activeJob.id !== runnerResults.jobId) && (
+          <button
+            className="tests-runner-job tests-runner-job-btn"
+            onClick={() => openReport(runnerResults.jobId)}
+            title="Open last run report"
+          >
+            ↗ last run {runnerResults.jobId.slice(0, 8)}
+          </button>
         )}
       </div>
       <div className="tests-progress-wrap">
@@ -404,6 +511,102 @@ export function TestsPage({ doc }: Props) {
       <div className="tests-footer">
         {filteredRows.length} of {rows.length} scenarios
       </div>
+
+      {viewingJobId && (
+        <div className="tests-report-overlay" onClick={closeReport}>
+          <div className="tests-report-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="tests-report-head">
+              <span className="tests-report-title">
+                Job {viewingJobId.slice(0, 8)}
+                {viewingReport && (
+                  <>
+                    {" — "}
+                    <strong style={{ color: viewingReport.failed > 0 ? "#dc2626" : "#16a34a" }}>
+                      {viewingReport.passed}/{viewingReport.total} pass
+                    </strong>
+                    {viewingReport.failed > 0 && `, ${viewingReport.failed} fail`}
+                  </>
+                )}
+              </span>
+              <button className="tests-report-close" onClick={closeReport} title="Close (esc)">✕</button>
+            </div>
+            {viewingError && <div className="tests-report-error">{viewingError}</div>}
+            {!viewingReport && !viewingError && <div className="tests-report-loading">Loading report…</div>}
+            {viewingReport && (
+              <div className="tests-report-body">
+                <div className="tests-report-meta">
+                  {viewingReport.baseUrl} · {viewingReport.startedAt && new Date(viewingReport.startedAt).toLocaleString()}
+                </div>
+                <div className="tests-report-routes">
+                  {viewingReport.routes
+                    .slice()
+                    .sort((a, b) => (a.status === "fail" ? -1 : 1) - (b.status === "fail" ? -1 : 1))
+                    .map((rt) => {
+                      const isOpen = expandedRouteIds.has(rt.routeId) || rt.status === "fail";
+                      return (
+                        <div key={rt.routeId} className={`tests-report-route ${rt.status}`}>
+                          <button className="tests-report-route-head" onClick={() => toggleRoute(rt.routeId)}>
+                            <span className={`tests-report-route-glyph ${rt.status}`}>
+                              {rt.status === "pass" ? "✓" : "✗"}
+                            </span>
+                            <span className="tests-report-route-role" style={{ color: ROLE_COLOR[rt.role ?? "any"] ?? "#64748b" }}>
+                              {rt.role ?? "any"}
+                            </span>
+                            <span className="tests-report-route-title">{rt.title}</span>
+                            {rt.status === "fail" && rt.failedAt !== undefined && (
+                              <span className="tests-report-route-failed-at">failed at step {rt.failedAt + 1}</span>
+                            )}
+                          </button>
+                          {isOpen && (
+                            <div className="tests-report-steps">
+                              {rt.steps.map((s, i) => (
+                                <div key={i} className={`tests-report-step status-${s.status}`}>
+                                  <div className="tests-report-step-line">
+                                    <span className="tests-report-step-num">{i + 1}.</span>
+                                    <span className="tests-report-step-text">{s.step}</span>
+                                    {s.url && <span className="tests-report-step-url">{s.url.replace(viewingReport.baseUrl, "")}</span>}
+                                    <span className={`tests-report-step-status status-${s.status}`}>{s.status}</span>
+                                  </div>
+                                  {s.adapter && (
+                                    <div className={`tests-report-adapter ${s.adapter.pass ? "pass" : "fail"}`}>
+                                      <span className="tests-report-adapter-kind">{s.adapter.kind}</span>
+                                      <span className="tests-report-adapter-reason">{s.adapter.reason}</span>
+                                      {s.adapter.kind === "axe" && Array.isArray((s.adapter.detail as { violations?: unknown[] } | undefined)?.violations) && (
+                                        <ul className="tests-report-adapter-violations">
+                                          {((s.adapter.detail as { violations: Array<{ id: string; help: string; nodes: number }> }).violations).map((v, idx) => (
+                                            <li key={idx}>
+                                              <code>{v.id}</code> ({v.nodes} nodes) — {v.help}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  )}
+                                  {s.llmVerdict && !s.adapter && (
+                                    <div className={`tests-report-adapter ${s.llmVerdict.pass ? "pass" : "fail"}`}>
+                                      <span className="tests-report-adapter-kind">llm</span>
+                                      <span className="tests-report-adapter-reason">{s.llmVerdict.reason}</span>
+                                    </div>
+                                  )}
+                                  {(s.consoleErrors.length > 0 || s.pageErrors.length > 0) && (
+                                    <div className="tests-report-errors">
+                                      {s.pageErrors.slice(0, 3).map((e, idx) => <div key={`pe${idx}`} className="tests-report-err">page error: {e}</div>)}
+                                      {s.consoleErrors.slice(0, 3).map((e, idx) => <div key={`ce${idx}`} className="tests-report-err">console: {e}</div>)}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
