@@ -146,6 +146,61 @@ export function markTestCase(
   return r.changes > 0;
 }
 
+/**
+ * Merge a runner-job report into test_cases. For every route in the report
+ * we upsert a (project, route_id, platform='web-desktop') row with the run's
+ * pass/fail status and a short reason (first failing step). Mobile platforms
+ * stay untouched — Playwright doesn't test them.
+ */
+export function ingestRunReport(
+  db: Database.Database,
+  args: {
+    project: string;
+    platform: string;             // typically 'web-desktop'
+    routes: Array<{
+      routeId: string;
+      treeId: string;
+      title: string;
+      role?: string;
+      kind: string;
+      status: "pass" | "fail";
+      failedAt?: number;
+      steps: Array<{ step: string; expect?: string; status: "pass" | "fail" | "skip"; adapter?: { reason?: string }; consoleErrors?: string[]; pageErrors?: string[] }>;
+    }>;
+  },
+): { upserted: number; passed: number; failed: number } {
+  const { project, platform, routes } = args;
+  const upsert = db.prepare(`
+    INSERT INTO test_cases (id, project, route_id, tree_id, platform, title, role, kind, steps_json, status, notes, completed_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      status = excluded.status,
+      notes = excluded.notes,
+      completed_at = datetime('now'),
+      updated_at = datetime('now')
+  `);
+  let passed = 0, failed = 0;
+  const tx = db.transaction(() => {
+    for (const rt of routes) {
+      const id = `${project}__${rt.routeId}__${platform}`;
+      let notes = "";
+      if (rt.status === "fail") {
+        const i = rt.failedAt ?? 0;
+        const s = rt.steps[i];
+        const reason = s?.adapter?.reason
+          ?? (s?.pageErrors?.[0] && `page: ${s.pageErrors[0]}`)
+          ?? (s?.consoleErrors?.[0] && `console: ${s.consoleErrors[0]}`)
+          ?? "see job report";
+        notes = `step ${i + 1}: ${s?.step ?? ""} — ${reason}`.slice(0, 500);
+      }
+      upsert.run(id, project, rt.routeId, rt.treeId, platform, rt.title, rt.role ?? null, rt.kind, JSON.stringify(rt.steps), rt.status, notes);
+      if (rt.status === "pass") passed++; else failed++;
+    }
+  });
+  tx();
+  return { upserted: routes.length, passed, failed };
+}
+
 export function resetTestCases(
   db: Database.Database,
   filters: { project: string; platform?: string },

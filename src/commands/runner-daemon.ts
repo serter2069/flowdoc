@@ -10,6 +10,7 @@ interface ProjectConfig {
   platforms?: string[];
   apiKey?: string;
   model?: string;
+  testDb?: string;        // path to the SQLite test_cases DB for ingest (default /root/flowdoc/.flowdoc/flowdoc.db)
 }
 
 interface ProjectsConfig {
@@ -254,13 +255,47 @@ async function drainQueue(ctx: { projects: ProjectsConfig; opts: DaemonOpts }): 
 
       // Parse the report runScenariosCommand just wrote
       if (existsSync(reportPath)) {
-        const report = JSON.parse(readFileSync(reportPath, "utf8")) as { total: number; passed: number; failed: number };
+        const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
+          total: number; passed: number; failed: number;
+          routes: Array<{
+            routeId: string; treeId: string; title: string; role?: string; kind: string;
+            status: "pass" | "fail"; failedAt?: number;
+            steps: Array<{ step: string; expect?: string; status: "pass" | "fail" | "skip"; adapter?: { reason?: string }; consoleErrors?: string[]; pageErrors?: string[] }>;
+          }>;
+        };
         job.total = report.total;
         job.passed = report.passed;
         job.failed = report.failed;
         job.resultPath = reportPath;
         job.status = report.failed > 0 ? "failed" : "passed";
         appendLog(job, `✓ ${report.total} routes — ${report.passed} pass, ${report.failed} fail`);
+
+        // Ingest into test_cases so the canvas Tests-table dots update.
+        // Mobile platforms (ios/android/web-mobile) stay untouched — Playwright
+        // only tests web-desktop today.
+        try {
+          const { default: Database } = await import("better-sqlite3");
+          const { openTestDb, ingestRunReport } = await import("./test-db.js");
+          // Test DB sits next to the project's flows.json (e.g. /root/projects/flowtest-pluto-auto/.flowdoc/flowdoc.db),
+          // OR alongside the flowdoc repo (/root/flowdoc/.flowdoc/flowdoc.db).
+          // Project config can override; otherwise we default to the repo path.
+          const testDbPath = pc.testDb ?? "/root/flowdoc/.flowdoc/flowdoc.db";
+          if (existsSync(testDbPath)) {
+            const db = openTestDb(testDbPath);
+            try {
+              const r = ingestRunReport(db, {
+                project: job.project, platform: "web-desktop",
+                routes: report.routes,
+              });
+              appendLog(job, `→ ingested ${r.upserted} rows into test_cases (web-desktop): ${r.passed} pass, ${r.failed} fail`);
+            } finally { db.close(); }
+            void Database;
+          } else {
+            appendLog(job, `⚠ test DB not found at ${testDbPath} — skipped ingest`);
+          }
+        } catch (e) {
+          appendLog(job, `⚠ ingest failed: ${(e as Error).message}`);
+        }
       } else {
         job.status = "error";
         job.error = "runScenariosCommand returned without writing report";
