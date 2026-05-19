@@ -23,7 +23,14 @@ const ON_PRESS_RE = /\bon(?:Press|Click)\s*=\s*\{/g;
 const API_CALL_INLINE = /\b(?:api|axios|\$fetch|http|client|service)\s*\.\s*(get|post|put|patch|delete)\s*[<(]?\s*['"`]([^'"`]+)['"`]/g;
 const FETCH_CALL_INLINE = /\bfetch\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*\{[^}]*method\s*:\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`]/gi;
 const MUTATION_CALL_RE = /\b(?:[a-zA-Z_$][\w$]*Mutation|[a-zA-Z_$][\w$]*\.mutation|mutation)\s*\.\s*(?:mutate|mutateAsync)\s*\(/g;
+// router.push("/foo") / router.replace(...) / navigation.navigate("Screen")
+const ROUTER_NAV_RE = /\b(?:router|navigation)\s*\.\s*(?:push|replace|navigate)\s*\(\s*['"`]([^'"`]+)['"`]/g;
+// router.push({ pathname: "/listing/[id]", ... })
+const ROUTER_NAV_OBJ_RE = /\b(?:router|navigation)\s*\.\s*(?:push|replace|navigate)\s*\(\s*\{[^}]*pathname\s*:\s*['"`]([^'"`]+)['"`]/g;
 const TITLE_PROP_RE = /\b(?:title|accessibilityLabel|label|name)\s*=\s*[{"']([^"'}]+)['"}]/;
+// Match `accessibilityLabel={t("home.search")}` — captures the i18n key.
+// The wrapped form: prop = "{" + t("key") + "}"
+const TITLE_I18N_RE = /\b(?:title|accessibilityLabel|label|name)\s*=\s*\{\s*t\s*\(\s*['"`]([^'"`]+)['"`]\s*\)\s*\}/;
 const CHILDREN_TEXT_RE = />\s*([A-Z][\w\s'.-]{1,40})\s*</;
 
 function methodToKind(method: string): StateAction["kind"] | null {
@@ -98,14 +105,45 @@ function findMatchingBrace(src: string, openPos: number): number {
   return -1;
 }
 
-function extractActionLabel(jsxTag: string, sourceWindow: string): string {
-  // 1. accessibility / title prop
+/**
+ * Pull the human-readable label off a clickable JSX tag.
+ *
+ * Priority:
+ *   1. `accessibilityLabel={t("key")}` — extract the i18n key.
+ *   2. `accessibilityLabel="literal"` / `title="..."` — use literal.
+ *   3. text content between `>` and `</Tag>`.
+ *
+ * Returns `{ label, isDynamic }`. `isDynamic` is true when the label came
+ * from a variable reference (e.g. `accessibilityLabel={title}`) so callers
+ * can decide whether to trust it for kind-inference.
+ */
+function extractActionLabel(jsxTag: string, sourceWindow: string): { label: string; isDynamic: boolean } {
+  // 1. i18n-wrapped accessibilityLabel — most accurate when present.
+  const im = TITLE_I18N_RE.exec(jsxTag);
+  if (im) return { label: im[1].slice(0, 64), isDynamic: false };
+  // 2. literal title/label/accessibilityLabel prop
   const tmatch = TITLE_PROP_RE.exec(jsxTag);
-  if (tmatch) return tmatch[1].slice(0, 32);
-  // 2. text content between > and </Tag>
+  if (tmatch) {
+    const raw = tmatch[1].slice(0, 64);
+    // If capture starts with `t(`, the i18n RE failed (likely template-string
+    // form); we fall through to other signals rather than emit garbage.
+    if (raw === "t(" || raw.startsWith("t(")) {
+      // try children text instead
+      const cmatch = CHILDREN_TEXT_RE.exec(sourceWindow);
+      if (cmatch) return { label: cmatch[1].trim().slice(0, 64), isDynamic: false };
+      return { label: "action", isDynamic: false };
+    }
+    // If the captured value looks like a bare JS identifier (came from
+    // `{varName}`), the LITERAL label is unknown at scan time. We still
+    // return the identifier so kind-inference can take a guess on names
+    // like `title`/`label`/`name`, but flag it so the caller can downgrade.
+    const isIdent = /^[a-zA-Z_$][\w$]*$/.test(raw) && !/\s/.test(raw);
+    return { label: raw, isDynamic: isIdent };
+  }
+  // 3. text content between > and </Tag>
   const cmatch = CHILDREN_TEXT_RE.exec(sourceWindow);
-  if (cmatch) return cmatch[1].trim().slice(0, 32);
-  return "action";
+  if (cmatch) return { label: cmatch[1].trim().slice(0, 64), isDynamic: false };
+  return { label: "action", isDynamic: false };
 }
 
 function findHandlerBody(src: string, identifierName: string): string | null {
@@ -169,22 +207,56 @@ export function extractActionsFromJsx(src: string): StateAction[] {
     const hasMutationCall = MUTATION_CALL_RE.test(handlerExpr);
     MUTATION_CALL_RE.lastIndex = 0;
 
-    const label = extractActionLabel(fullTag, src.slice(startIdx, startIdx + 200));
-    const fallbackKind = inferredKindFromName ?? inferKindFromLabel(label);
+    // Detect router/navigation pushes — handlers that move the user to
+    // another screen but don't mutate server state. Universal across
+    // Expo Router, React Navigation, etc.
+    const navTargets: string[] = [];
+    ROUTER_NAV_RE.lastIndex = 0;
+    while ((am = ROUTER_NAV_RE.exec(handlerExpr))) navTargets.push(am[1]);
+    ROUTER_NAV_OBJ_RE.lastIndex = 0;
+    while ((am = ROUTER_NAV_OBJ_RE.exec(handlerExpr))) navTargets.push(am[1]);
+
+    const { label, isDynamic } = extractActionLabel(fullTag, src.slice(startIdx, startIdx + 200));
+    // For dynamic labels (`{title}`/`{name}`), don't trust verb-from-label
+    // inference — it would emit kind="add" for any button labeled "name".
+    const fallbackKind = inferredKindFromName ?? (isDynamic ? null : inferKindFromLabel(label));
 
     if (apis.length === 0) {
-      // No direct api call. Emit a fallback action if we have ANY signal
-      // about what this button does — handler name, mutation call, or a
-      // descriptive button label.
-      const kind: StateAction["kind"] | null = fallbackKind ?? (hasMutationCall ? "submit" : null);
-      if (kind) {
+      // No direct api call. Try in order: mutate-hook, label/handler verb,
+      // navigation. Bail if none of those signals exist.
+      if (hasMutationCall || fallbackKind) {
+        const kind: StateAction["kind"] = fallbackKind ?? "submit";
         const target = labelToTarget(label);
         const key = `${kind}:${target}`;
         if (!seen.has(key)) {
           seen.add(key);
-          actions.push({ kind, target, comment: hasMutationCall ? `mutation: ${label}` : `button: ${label}` });
+          const comment = hasMutationCall
+            ? `mutation: ${label}`
+            : isDynamic ? `button: ${label} (dynamic)` : `button: ${label}`;
+          actions.push({ kind, target, comment });
         }
+        continue;
       }
+      if (navTargets.length > 0) {
+        // Emit ONE nav action per unique target — list-card with the same
+        // shape used many times shouldn't produce 50 chips.
+        for (const path of dedupe(navTargets)) {
+          const navTarget = isDynamic || !label || label === "action"
+            ? routeToTarget(path)
+            : labelToTarget(label);
+          const key = `nav:${navTarget}:${path}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          actions.push({
+            kind: "nav",
+            target: navTarget,
+            expect: `→ ${path}`,
+            comment: isDynamic ? `nav: ${label} (dynamic)` : `nav: ${label}`,
+          });
+        }
+        continue;
+      }
+      // No signal at all — skip silently.
       continue;
     }
     for (const a of apis) {
@@ -202,6 +274,20 @@ export function extractActionsFromJsx(src: string): StateAction[] {
     }
   }
   return actions;
+}
+
+function dedupe(arr: string[]): string[] {
+  return Array.from(new Set(arr));
+}
+
+/** Convert a route path like "/listing/[id]" or "/admin/users" into a stable target slug. */
+function routeToTarget(path: string): string {
+  return path
+    .replace(/[\[\]\(\)]/g, "")           // strip param brackets and group parens
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 32) || "nav";
 }
 
 // ─── Form-field / control extraction ───────────────────────────────────────

@@ -78,6 +78,7 @@ const PositionSchema = z.object({
 const ActionKindSchema = z.enum([
   "edit", "add", "delete", "upload", "toggle", "submit", "approve", "reject",
   "select", "scroll", "otp", "download",       // full-coverage extension
+  "nav", "view",                                // navigation press (router.push) / read-only view tap
 ]);
 
 const StateActionSchema = z.object({
